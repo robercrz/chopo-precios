@@ -1481,9 +1481,13 @@ def render_quotation_tab(prices: list):
 
                         if desc_txt and not bullets and not inc_txt:
                             st.markdown(f"**ℹ️ Descripción del paquete:**\n\n{desc_txt}")
-                        elif desc_txt and (bullets or inc_txt):
-                            with st.expander("ℹ️ Ver descripción clínica completa"):
-                                st.write(desc_txt)
+                        elif desc_txt:
+                            st.markdown(f"""
+                            <details style="margin: 8px 0; padding: 6px 10px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e9ecef;">
+                                <summary style="cursor: pointer; color: #1a5276; font-weight: 600;">ℹ️ Ver descripción clínica completa</summary>
+                                <p style="margin-top: 8px; font-size: 0.9rem; color: #333;">{desc_txt}</p>
+                            </details>
+                            """, unsafe_allow_html=True)
 
                         if fasting_txt:
                             st.caption(f"⏰ **Indicaciones de ayuno / preparación:** {fasting_txt}")
