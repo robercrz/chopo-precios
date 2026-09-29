@@ -1,0 +1,9 @@
+{
+  "mode": "cron",
+  "cron_hour": 8,
+  "cron_minute": 0,
+  "interval_hours": 12,
+  "branch": "altabrisa",
+  "lab_key": "chopo_yucatan",
+  "enabled": true
+}

@@ -1,0 +1,10 @@
+venv\
+__pycache__\
+.git\
+db\chopo_prices.db
+logs\*.png
+logs\investigate.py
+logs\migrate_favorites.py
+exports\
+*.pyc
+.env
