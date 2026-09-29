@@ -1,12 +1,6 @@
 # ============================================================
-# CHOPO PRICE INTELLIGENCE - Requirements
+# CHOPO PRICE INTELLIGENCE - Cloud Requirements (Streamlit Cloud)
 # ============================================================
-
-# --- Web Scraping (Playwright - necesario para JS dinámico de Magento) ---
-playwright==1.44.0
-
-# --- Base de datos ---
-# SQLite viene incluido en Python, no requiere instalación
 
 # --- Dashboard / UI ---
 streamlit==1.35.0
@@ -16,16 +10,16 @@ plotly==5.22.0
 openpyxl==3.1.3
 xlsxwriter==3.2.0
 
-# --- Scheduler (actualizaciones automáticas diarias) ---
+# --- Scheduler & Configuración ---
 APScheduler==3.10.4
+pytz
 
-# --- Utilidades ---
+# --- Utilidades & Datos ---
 pandas==2.2.2
 python-dotenv==1.0.1
 loguru==0.7.2
 rich==13.7.1
 psutil>=5.9.0
-pytz
 
-# --- Requests (fallback / API calls) ---
+# --- HTTP ---
 requests==2.32.3
