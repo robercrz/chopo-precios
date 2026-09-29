@@ -96,7 +96,9 @@ def start_scheduler() -> tuple[bool, str]:
         return True, f"El scheduler ya está activo (PID {status['pid']})."
 
     script = str(ROOT_DIR / "scraper" / "scheduler_service.py")
-    log_file = open(ROOT_DIR / "logs" / "scheduler.log", "a", encoding="utf-8", errors="replace")
+    log_dir = ROOT_DIR / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = open(log_dir / "scheduler.log", "a", encoding="utf-8", errors="replace")
 
     # En Windows, usar creación de proceso desvinculado (CREATE_NO_WINDOW o detached)
     creationflags = 0

@@ -3,7 +3,11 @@ __pycache__/
 *.pyc
 *.pyo
 .env
-logs/
+logs/*.log
+logs/*.pid
+logs/*.json
+logs/*.png
+!logs/.gitkeep
 exports/
 *.log
 .DS_Store

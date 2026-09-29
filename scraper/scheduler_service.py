@@ -120,6 +120,7 @@ def run_scrape_task(branch: str = "altabrisa", lab_key: str = "chopo_yucatan") -
 
 def main():
     """Bucle principal del servicio scheduler."""
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     logger.add(LOG_FILE, rotation="1 week", retention="1 month", level="INFO")
     PID_FILE.parent.mkdir(parents=True, exist_ok=True)
     PID_FILE.write_text(str(os.getpid()), encoding="utf-8")

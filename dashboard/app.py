@@ -1342,6 +1342,12 @@ def render_scheduler_tab():
     elif not is_running:
         st.caption("ℹ️ Haz clic en '🟢 Iniciar Scheduler' abajo para activar las actualizaciones automáticas en segundo plano.")
 
+    is_cloud = Path("/mount/src").exists()
+    if is_cloud:
+        st.info("☁️ **Estás visualizando el portal en la Nube (Streamlit Cloud)**\n\n"
+                "Las actualizaciones automáticas de precios y el navegador Playwright se ejecutan de forma óptima en tu computadora local en Mérida para garantizar velocidad y evitar bloqueos de IP.\n\n"
+                "💡 Cada vez que tu PC local ejecuta el scrape (diario a las 6:00 AM o manual), la base de datos en la nube se actualiza automáticamente.")
+
     st.markdown("---")
     st.markdown("#### 🎮 Controles del Servicio:")
     btn_c1, btn_c2, btn_c3, btn_c4 = st.columns(4)
@@ -1349,9 +1355,12 @@ def render_scheduler_tab():
     with btn_c1:
         if not is_running:
             if st.button("🟢 Iniciar Scheduler", type="primary", use_container_width=True):
-                ok, msg = start_scheduler()
-                if ok: st.success(msg)
-                else: st.error(msg)
+                try:
+                    ok, msg = start_scheduler()
+                    if ok: st.success(msg)
+                    else: st.error(msg)
+                except Exception as ex:
+                    st.error(f"Error iniciando scheduler: {ex}")
                 st.rerun()
         else:
             st.button("🟢 Servicio Activo", disabled=True, use_container_width=True)
@@ -1359,9 +1368,12 @@ def render_scheduler_tab():
     with btn_c2:
         if is_running:
             if st.button("🔴 Detener Scheduler", type="secondary", use_container_width=True):
-                ok, msg = stop_scheduler()
-                if ok: st.warning(msg)
-                else: st.error(msg)
+                try:
+                    ok, msg = stop_scheduler()
+                    if ok: st.warning(msg)
+                    else: st.error(msg)
+                except Exception as ex:
+                    st.error(f"Error deteniendo scheduler: {ex}")
                 st.rerun()
         else:
             st.button("🔴 Servicio Detenido", disabled=True, use_container_width=True)
@@ -1369,8 +1381,11 @@ def render_scheduler_tab():
     with btn_c3:
         if is_running:
             if st.button("🔄 Reiniciar Servicio", use_container_width=True):
-                ok, msg = restart_scheduler()
-                st.info(msg)
+                try:
+                    ok, msg = restart_scheduler()
+                    st.info(msg)
+                except Exception as ex:
+                    st.error(f"Error reiniciando scheduler: {ex}")
                 st.rerun()
         else:
             st.button("🔄 Reiniciar", disabled=True, use_container_width=True)
