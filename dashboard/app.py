@@ -432,42 +432,16 @@ def render_catalog_tab(prices: list, filters: dict):
             lambda n: classify_study(n) if pd.notna(n) else "Otros"
         )
 
-    # Agregar indicador de favorito
     fav_names = get_favorite_names()
-    df["fav"] = df["study_name"].apply(lambda n: "⭐" if n in fav_names else "")
 
-    # ── Filtro rápido de favoritos ──
-    c_filt_fav, c_quick_sel, c_quick_btn = st.columns([2, 4, 2])
+    # ── Filtros y Selector Directo de Estudio ──────────────────────────────────
+    c_filt_fav, c_quick_sel = st.columns([2, 5])
     with c_filt_fav:
         only_favs = st.checkbox(f"⭐ Ver solo mis Favoritos ({len(fav_names)})", value=False, key="cat_only_favs")
     if only_favs:
         df = df[df["study_name"].isin(fav_names)]
 
-    with c_quick_sel:
-        all_avail = sorted(df["study_name"].dropna().unique().tolist())
-        q_pick = st.selectbox(
-            "⭐ O busca un estudio aquí para marcarlo con 1 clic:",
-            options=["-- Selecciona un estudio para marcar/desmarcar --"] + all_avail,
-            key="cat_quick_picker",
-            label_visibility="collapsed",
-        )
-    with c_quick_btn:
-        if q_pick and q_pick != "-- Selecciona un estudio para marcar/desmarcar --":
-            is_q_f = q_pick in fav_names
-            if is_q_f:
-                if st.button("💛 Quitar Favorito", key="btn_q_del_top", use_container_width=True):
-                    remove_favorite(q_pick, "chopo_yucatan")
-                    st.toast(f"'{q_pick}' removido de favoritos")
-                    st.rerun()
-            else:
-                if st.button("⭐ Marcar Favorito", type="primary", key="btn_q_add_top", use_container_width=True):
-                    add_favorite(q_pick, "chopo_yucatan")
-                    st.toast(f"⭐ '{q_pick}' agregado a favoritos!")
-                    st.rerun()
-        else:
-            st.button("⭐ Selecciona arriba", disabled=True, use_container_width=True)
-
-    # ── Aplicar filtros ────────────────────────────────────────────────────────
+    # ── Aplicar filtros del sidebar ───────────────────────────────────────────
     if filters.get("lab") and filters["lab"] != "Todos" and "lab_name" in df.columns:
         df = df[df["lab_name"] == filters["lab"]]
 
@@ -485,6 +459,16 @@ def render_catalog_tab(prices: list, filters: dict):
 
     df = df.reset_index(drop=True)
 
+    # Selector con autocompletado en el encabezado
+    all_avail = sorted(df["study_name"].dropna().unique().tolist())
+    with c_quick_sel:
+        selected_from_picker = st.selectbox(
+            "🔍 Busca o selecciona un estudio para ver su detalle y gestionar favorito:",
+            options=["-- Escribe aquí el nombre de cualquier estudio para seleccionarlo --"] + all_avail,
+            key="cat_quick_picker_box",
+            help="Escribe cualquier parte del nombre (ej. glucosa, biometría, perfil) para seleccionarlo directamente sin buscarlo en la tabla."
+        )
+
     # ── Conteo por categoría (mini badges) ────────────────────────────────────
     cat_counts = df["category"].value_counts().to_dict() if "category" in df.columns else {}
     badge_html = " ".join(
@@ -496,14 +480,24 @@ def render_catalog_tab(prices: list, filters: dict):
         f"Mostrando **{len(df)}** estudios &nbsp;|&nbsp; {badge_html}",
         unsafe_allow_html=True,
     )
-    st.markdown("")
 
-    # ── Tabla con selección de fila ────────────────────────────────────────────
-    display_cols = [c for c in ["fav", "study_name", "category", "price", "price_raw", "lab_name", "city", "scraped_at"]
+    # ── Clic Rápido en Resultados de Búsqueda ──────────────────────────────────
+    if filters.get("search") and 0 < len(df) <= 12:
+        st.markdown("**⚡ Clic directo en cualquiera de estos resultados:**")
+        pill_cols = st.columns(min(4, len(df)))
+        for idx, (_, r_p) in enumerate(df.head(8).iterrows()):
+            with pill_cols[idx % 4]:
+                p_text = f"${r_p['price']:,.2f}" if pd.notna(r_p.get("price")) else ""
+                is_f_pill = "⭐ " if r_p["study_name"] in fav_names else ""
+                if st.button(f"{is_f_pill}{r_p['study_name'][:24]}\n{p_text}", key=f"pill_cat_{r_p['study_name']}", use_container_width=True):
+                    st.session_state["catalog_active_study"] = r_p["study_name"]
+                    st.rerun()
+
+    # ── Tabla limpia (Sin columna de estrellas y sin índice numérico) ───────────
+    display_cols = [c for c in ["study_name", "category", "price", "price_raw", "lab_name", "city", "scraped_at"]
                     if c in df.columns]
     df_display = df[display_cols].copy()
     col_rename = {
-        "fav": "★",
         "study_name": "Estudio",
         "category": "Especialidad",
         "price": "Precio",
@@ -518,50 +512,67 @@ def render_catalog_tab(prices: list, filters: dict):
         df_display,
         use_container_width=True,
         height=400,
+        hide_index=True,
         on_select="rerun",
         selection_mode="single-row",
         column_config={
-            "Precio": st.column_config.NumberColumn("Precio (MXN)", format="$%.2f"),
-            "Actualizado": st.column_config.DatetimeColumn("Actualizado"),
-            "★": st.column_config.TextColumn("★", help="Muestra ⭐ si ya está en tus favoritos", width="small"),
+            "Estudio": st.column_config.TextColumn("Estudio", width="large"),
             "Especialidad": st.column_config.TextColumn("Especialidad", width="medium"),
+            "Precio": st.column_config.NumberColumn("Precio (MXN)", format="$%.2f", width="small"),
+            "Actualizado": st.column_config.DatetimeColumn("Actualizado", width="small"),
         },
     )
 
-    # ── Barra de Acción Inmediata al seleccionar fila ───────────────────────────
-    selected_rows = getattr(selection_event, "selection", None)
-    selected_idx = selected_rows.rows[0] if (selected_rows and selected_rows.rows) else None
+    # ── Determinar estudio activo seleccionado ─────────────────────────────────
+    active_study = None
 
-    if selected_idx is not None and selected_idx < len(df):
-        row = df.iloc[selected_idx]
-        st_name = row["study_name"]
-        st_price = row.get("price")
-        st_cat = row.get("category", "")
-        is_f = st_name in fav_names
-        p_str = f"${st_price:,.2f} MXN" if st_price else "Sin precio"
+    # 1. Si eligió del dropdown de autocompletado
+    if selected_from_picker and selected_from_picker != "-- Escribe aquí el nombre de cualquier estudio para seleccionarlo --":
+        active_study = selected_from_picker
 
-        # Banner prominente con botón grande
-        st.markdown("---")
-        c_ban_info, c_ban_btn = st.columns([4, 2])
-        with c_ban_info:
-            fav_status = "⭐ Ya está en tus Favoritos" if is_f else "☆ No está en Favoritos"
-            st.info(f"📌 **Estudio Seleccionado:** **{st_name}** ({p_str}) | Especialidad: `{st_cat}` | **{fav_status}**")
-        with c_ban_btn:
-            if is_f:
-                if st.button("💛 Quitar de Favoritos", key=f"quick_banner_del_{st_name}", use_container_width=True):
-                    remove_favorite(st_name, row.get("lab_key", "chopo_yucatan"), row.get("branch"))
-                    st.toast(f"'{st_name}' removido de favoritos")
-                    st.rerun()
-            else:
-                if st.button("⭐ MARCAR COMO FAVORITO", type="primary", key=f"quick_banner_add_{st_name}", use_container_width=True):
-                    add_favorite(st_name, row.get("lab_key", "chopo_yucatan"), row.get("branch"))
-                    st.toast(f"⭐ '{st_name}' agregado a favoritos!")
-                    st.rerun()
+    # 2. Si hizo clic en un botón rápido
+    elif "catalog_active_study" in st.session_state and st.session_state["catalog_active_study"]:
+        active_study = st.session_state["catalog_active_study"]
 
-        # Panel de Detalle completo
-        _render_study_detail(row, df, fav_names)
+    # 3. Si seleccionó una fila en la tabla
     else:
-        st.caption("💡 **Tip:** Haz clic en cualquier fila de la tabla para seleccionarla y verás aparecer aquí el botón directo para marcarla o desmarcarla.")
+        selected_rows = getattr(selection_event, "selection", None)
+        if selected_rows and selected_rows.rows:
+            sel_idx = selected_rows.rows[0]
+            if sel_idx < len(df):
+                active_study = df.iloc[sel_idx]["study_name"]
+
+    # ── Panel de Detalle y Gestión de Favorito ──────────────────────────────────
+    if active_study:
+        m_rows = df[df["study_name"] == active_study]
+        if not m_rows.empty:
+            row = m_rows.iloc[0]
+            st_name = row["study_name"]
+            st_price = row.get("price")
+            st_cat = row.get("category", "")
+            is_f = st_name in fav_names
+            p_str = f"${st_price:,.2f} MXN" if st_price else "Sin precio"
+
+            st.markdown("---")
+            c_ban_info, c_ban_btn = st.columns([4, 2])
+            with c_ban_info:
+                fav_status = "⭐ Ya está en tus Favoritos" if is_f else "☆ No está en Favoritos"
+                st.info(f"📌 **Estudio Seleccionado:** **{st_name}** ({p_str}) | Especialidad: `{st_cat}` | **{fav_status}**")
+            with c_ban_btn:
+                if is_f:
+                    if st.button("💛 Quitar de Favoritos", key=f"quick_del_{st_name}", use_container_width=True):
+                        remove_favorite(st_name, row.get("lab_key", "chopo_yucatan"), row.get("branch"))
+                        st.toast(f"'{st_name}' removido de favoritos")
+                        st.rerun()
+                else:
+                    if st.button("⭐ MARCAR COMO FAVORITO", type="primary", key=f"quick_add_{st_name}", use_container_width=True):
+                        add_favorite(st_name, row.get("lab_key", "chopo_yucatan"), row.get("branch"))
+                        st.toast(f"⭐ '{st_name}' agregado a favoritos!")
+                        st.rerun()
+
+            _render_study_detail(row, df, fav_names)
+    else:
+        st.caption("💡 **Tip:** Escribe el nombre de cualquier estudio en el buscador superior o selecciona una fila para ver su análisis completo y gestionarlo.")
 
 
 
