@@ -13,6 +13,8 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+import io
+import unicodedata
 from datetime import datetime, timedelta
 from typing import Optional
 from loguru import logger
@@ -1123,10 +1125,123 @@ def render_discounts_tab(prices: list):
             st.plotly_chart(fig_cat_sav, use_container_width=True)
 
 
-# ── Tab: Cotizador de Paquetes ────────────────────────────────────────────────
+# ── Helpers para Comparador de Paquetes & Estrategia ──────────────────────────
+def _normalize_str(text: str) -> str:
+    """Normaliza texto eliminando acentos y convirtiendo a mayúsculas para búsquedas robustas."""
+    if not text:
+        return ""
+    return unicodedata.normalize("NFKD", str(text)).encode("ASCII", "ignore").decode("utf-8").upper()
+
+
+def _is_bundle_study(name: str) -> bool:
+    """Identifica si un estudio es un paquete, perfil, panel o check-up multidimensional."""
+    if not isinstance(name, str):
+        return False
+    norm_n = _normalize_str(name)
+    if "PERFILOGRAFIA" in norm_n:
+        return False
+    keywords = ["CHECK UP", "CHECKUP", "PERFIL", "PAQUETE", "PANEL", "INTEGRAL", "PREVENCION", "PREVENC"]
+    return any(k in norm_n for k in keywords)
+
+
+def _get_bundle_segment(name: str) -> str:
+    """Clasifica los paquetes de Chopo en segmentos clínicos para análisis de mercado."""
+    n = _normalize_str(name)
+    if any(k in n for k in ["TIROID", "HORMON", "ANDROGEN", "TESTOSTERON"]):
+        return "🩸 Tiroideo & Hormonal"
+    if any(k in n for k in ["GLUCOSA", "DIABETES", "LIPID", "LIPOID", "TRIGLICERID", "COLESTEROL", "PREDIABETES"]):
+        return "🥗 Diabetes & Metabólico"
+    if any(k in n for k in ["PRENATAL", "EMBARAZO", "FEMENIN", "MUJER", "MAMA", "OVARIO", "TORCH", "CLIMATERIO"]):
+        return "🤰 Salud Femenina & Prenatal"
+    if any(k in n for k in ["PROSTAT", "HOMBRE", "MASCULIN"]):
+        return "👨 Próstata & Masculino"
+    if any(k in n for k in ["SEXUAL", "TRANSMIS", "HEPATITIS", "COVID", "RESPIRATORI", "VIRAL", "VIH", "SIFILIS"]):
+        return "🦠 Infecciosas & ETS"
+    if any(k in n for k in ["RENAL", "HEPATIC", "TRANSAMINAS", "ACIDO URICO"]):
+        return "🧪 Renal & Hepático"
+    if any(k in n for k in ["CANCER", "TUMOR", "BRCA", "ALERGEN", "FIBROTEST", "INMUNOHISTO"]):
+        return "🧬 Oncología & Especialidades"
+    if any(k in n for k in ["REUMAT", "AUTOINMUN"]):
+        return "🦴 Reumatología & Autoinmune"
+    if any(k in n for k in ["QUIMICA", "ELEMENTOS", "PREOPERATORIO", "DEPORTISTA"]):
+        return "🧪 Químicas Integrales & Preop"
+    if any(k in n for k in ["CHECK", "PREVENCI", "SALUDABLE", "REGRESO A CLASES", "CUIDA TU CORAZ", "SU SALUD"]):
+        return "🩺 Check-ups & Preventivos"
+    return "📦 Otros Perfiles"
+
+
+def _generate_commercial_proposal_excel(
+    clinic_name: str,
+    client_name: str,
+    package_name: str,
+    items: list[dict],
+    total_chopo: float,
+    total_our: float,
+    savings: float,
+    savings_pct: float,
+    benefits: list[str],
+) -> bytes:
+    """Genera en memoria un archivo Excel formateado profesionalmente para propuestas comerciales."""
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        wb = writer.book
+        ws = wb.add_worksheet("Propuesta Comercial")
+
+        fmt_title = wb.add_format({"bold": True, "font_size": 15, "font_color": "#1a5276"})
+        fmt_sub = wb.add_format({"italic": True, "font_size": 10, "font_color": "#555555"})
+        fmt_hdr = wb.add_format({
+            "bold": True, "font_color": "white", "bg_color": "#1a5276",
+            "border": 1, "align": "center", "valign": "vcenter",
+        })
+        fmt_curr = wb.add_format({"num_format": "$#,##0.00", "border": 1})
+        fmt_curr_bold = wb.add_format({"bold": True, "num_format": "$#,##0.00", "border": 1, "bg_color": "#d4efdf"})
+        fmt_pct = wb.add_format({"num_format": '0.0"%"', "border": 1})
+        fmt_pct_bold = wb.add_format({"bold": True, "num_format": '0.0"%"', "border": 1, "bg_color": "#d4efdf"})
+        fmt_cell = wb.add_format({"border": 1})
+        fmt_total_lbl = wb.add_format({"bold": True, "border": 1, "bg_color": "#eaeded"})
+        fmt_sec_hdr = wb.add_format({"bold": True, "font_size": 12, "font_color": "#1a5276"})
+        fmt_benefit = wb.add_format({"font_color": "#196f3d", "font_size": 10})
+
+        ws.write("A1", "PROPUESTA COMERCIAL COMPETITIVA", fmt_title)
+        ws.write("A2", f"Laboratorio emisor: {clinic_name}  |  Fecha: {datetime.now().strftime('%d/%m/%Y')}", fmt_sub)
+        ws.write("A3", f"Presentado para: {client_name}  |  Paquete: {package_name}", fmt_sub)
+
+        headers = ["Concepto / Análisis Incluido", "Precio Chopo (Referencia)", f"Precio Especial {clinic_name}", "Ahorro al Cliente ($)", "Ventaja (%)"]
+        for col_idx, h in enumerate(headers):
+            ws.write(4, col_idx, h, fmt_hdr)
+
+        row_idx = 5
+        for it in items:
+            ws.write(row_idx, 0, it["name"], fmt_cell)
+            ws.write(row_idx, 1, it["chopo_price"], fmt_curr)
+            ws.write(row_idx, 2, it["our_price"], fmt_curr)
+            ws.write(row_idx, 3, it["savings"], fmt_curr)
+            ws.write(row_idx, 4, it["savings_pct"] / 100.0, fmt_pct)
+            row_idx += 1
+
+        ws.write(row_idx, 0, "TOTAL PAQUETE", fmt_total_lbl)
+        ws.write(row_idx, 1, total_chopo, fmt_curr_bold)
+        ws.write(row_idx, 2, total_our, fmt_curr_bold)
+        ws.write(row_idx, 3, savings, fmt_curr_bold)
+        ws.write(row_idx, 4, savings_pct / 100.0, fmt_pct_bold)
+
+        row_idx += 2
+        ws.write(row_idx, 0, "VALOR AGREGADO Y BENEFICIOS EXCLUSIVOS:", fmt_sec_hdr)
+        row_idx += 1
+        for b in benefits:
+            ws.write(row_idx, 0, f"  ✓  {b}", fmt_benefit)
+            row_idx += 1
+
+        ws.set_column(0, 0, 48)
+        ws.set_column(1, 4, 25)
+
+    return output.getvalue()
+
+
+# ── Tab: Paquetes & Estrategia Competitiva ────────────────────────────────────
 def render_quotation_tab(prices: list):
-    st.markdown("### 💼 Cotizador de Paquetes & Perfiles Clínicos")
-    st.caption("Arma cotizaciones para pacientes o empresas, calcula totales con descuento y genera fichas para WhatsApp o Excel.")
+    st.markdown("### 💼 Paquetes & Estrategia Competitiva vs Chopo")
+    st.caption("Herramienta de inteligencia de precios para tu clínica: analiza los paquetes oficiales de Chopo, modela tu estrategia de precios, calcula tus márgenes y genera propuestas comerciales B2B.")
 
     df = pd.DataFrame(prices)
     if df.empty or "study_name" not in df.columns:
@@ -1136,157 +1251,579 @@ def render_quotation_tab(prices: list):
     if "category" not in df.columns:
         df["category"] = df["study_name"].apply(lambda n: classify_study(n) if pd.notna(n) else "Otros")
 
+    # Identificar y enriquecer paquetes
+    df["is_bundle"] = df["study_name"].apply(_is_bundle_study)
+    df["bundle_segment"] = df["study_name"].apply(_get_bundle_segment)
+
+    def _calc_row_list(row):
+        p = float(row.get("price") or 0.0)
+        orig = row.get("price_original")
+        if pd.notna(orig) and float(orig) > p:
+            lp = float(orig)
+            disc = ((lp - p) / lp) * 100.0
+        else:
+            lp = round(p / 0.90, 2)
+            disc = 10.0
+        return pd.Series([lp, disc], index=["list_price", "discount_pct"])
+
+    df_valid_p = df.dropna(subset=["price"]).copy()
+    disc_calc = df_valid_p.apply(_calc_row_list, axis=1)
+    df = df.join(disc_calc)
+    df["list_price"] = df["list_price"].fillna(df["price"])
+    df["discount_pct"] = df["discount_pct"].fillna(0.0)
+
+    # Estado de sesión
     if "quote_selected" not in st.session_state:
         st.session_state.quote_selected = []
+    if "our_selling_price" not in st.session_state:
+        st.session_state.our_selling_price = 0.0
+    if "our_internal_cost" not in st.session_state:
+        st.session_state.our_internal_cost = 0.0
+    if "our_package_name" not in st.session_state:
+        st.session_state.our_package_name = "Check-Up Clínico Preventivo"
+    if "active_chopo_bundle" not in st.session_state:
+        st.session_state.active_chopo_bundle = None
+    if "sim_mode" not in st.session_state:
+        st.session_state.sim_mode = "Armar a la carta (Suma de estudios)"
 
-    st.markdown("#### ⚡ Paquetes Rápidos Predefinidos (1 clic):")
-    p1, p2, p3, p4, p5, p6 = st.columns(6)
+    subtab1, subtab2, subtab3 = st.tabs([
+        "📦 Paquetes Oficiales Chopo (152)",
+        "🎯 Simulador de Estrategia vs Chopo",
+        "📄 Propuesta Comercial & Comparativa B2B",
+    ])
 
-    def _find_matches(keywords: list[str]) -> list[str]:
-        found = []
-        for kw in keywords:
-            m = df[df["study_name"].str.contains(kw, case=False, na=False)]
-            if not m.empty:
-                m_with_p = m.dropna(subset=["price"]).sort_values("price")
-                if not m_with_p.empty:
-                    found.append(m_with_p.iloc[0]["study_name"])
-                else:
-                    found.append(m.iloc[0]["study_name"])
-        return list(dict.fromkeys(found))
+    # ═══════════════════════════════════════════════════════════════════════════
+    # SUBTAB 1: Explorador de Paquetes Oficiales Chopo
+    # ═══════════════════════════════════════════════════════════════════════════
+    with subtab1:
+        st.markdown("#### 📦 Catálogo de Paquetes, Perfiles y Check-ups Oficiales de Chopo")
+        st.caption("Chopo ya comercializa estos paquetes predefinidos en Mérida. Conoce sus precios de lista, precios web con descuento y úsalos como referencia para competir.")
 
-    with p1:
-        if st.button("🩺 Check-up Básico", use_container_width=True):
-            st.session_state.quote_selected = _find_matches(["GLUCOSA", "BIOMETRÍA HEMÁTICA", "EXAMEN GENERAL DE ORINA"])
-            st.rerun()
-    with p2:
-        if st.button("🥗 Perfil Lipídico", use_container_width=True):
-            st.session_state.quote_selected = _find_matches(["COLESTEROL TOTAL", "TRIGLICÉRIDOS", "LÍPIDOS", "GLUCOSA"])
-            st.rerun()
-    with p3:
-        if st.button("🩸 Perfil Tiroideo", use_container_width=True):
-            st.session_state.quote_selected = _find_matches(["TIROIDEO", "TSH", "T3", "T4"])
-            st.rerun()
-    with p4:
-        if st.button("🧪 Química 45 Elem.", use_container_width=True):
-            st.session_state.quote_selected = _find_matches(["QUÍMICA INTEGRAL DE 45 ELEMENTOS", "BIOMETRÍA HEMÁTICA"])
-            st.rerun()
-    with p5:
-        if st.button("🤰 Perfil Prenatal", use_container_width=True):
-            st.session_state.quote_selected = _find_matches(["BIOMETRÍA HEMÁTICA", "EXAMEN GENERAL DE ORINA", "GLUCOSA", "VDRL"])
-            st.rerun()
-    with p6:
-        if st.button("🧹 Limpiar Todo", use_container_width=True):
-            st.session_state.quote_selected = []
-            st.rerun()
+        df_bundles = df[df["is_bundle"] & df["price"].notna()].copy()
+        df_bundles = df_bundles.sort_values("price", ascending=True).reset_index(drop=True)
 
-    st.markdown("---")
+        # Métricas de paquetes
+        m1, m2, m3, m4 = st.columns(4)
+        with m1:
+            st.metric("Total Paquetes Chopo", f"{len(df_bundles):,}")
+        with m2:
+            st.metric("Precio Promedio", f"${df_bundles['price'].mean():,.2f} MXN")
+        with m3:
+            st.metric("Paquete Más Económico", f"${df_bundles['price'].min():,.2f} MXN")
+        with m4:
+            st.metric("Paquete Más Completo", f"${df_bundles['price'].max():,.2f} MXN")
 
-    all_studies = sorted(df["study_name"].dropna().unique().tolist())
-    selected = st.multiselect(
-        "🔍 Busca y agrega estudios al paquete a cotizar:",
-        options=all_studies,
-        default=st.session_state.quote_selected,
-        key="quote_multiselect",
-    )
-    st.session_state.quote_selected = selected
+        st.markdown("---")
 
-    if not selected:
-        st.info("👆 Selecciona uno de los paquetes predefinidos arriba o busca estudios en el cuadro para comenzar a cotizar.")
-        return
+        # Filtros
+        f_c1, f_c2, f_c3 = st.columns([3, 2, 3])
+        with f_c1:
+            segments = ["Todos"] + sorted(df_bundles["bundle_segment"].unique().tolist())
+            selected_segment = st.selectbox("Segmento Clínico:", segments, key="bundle_seg_filter")
+        with f_c2:
+            max_p = int(df_bundles["price"].max())
+            price_limit = st.slider("Precio Máximo ($ MXN):", 100, max_p, max_p, step=250, key="bundle_price_slider")
+        with f_c3:
+            search_bundle = st.text_input("Buscar paquete por nombre:", placeholder="ej. Tiroideo, Mujer, 45 elementos, Check up...", key="bundle_search_kw")
 
-    df_quote = df[df["study_name"].isin(selected)].copy().drop_duplicates(subset=["study_name"])
-    df_quote["price"] = df_quote["price"].fillna(0.0)
+        filtered_b = df_bundles.copy()
+        if selected_segment != "Todos":
+            filtered_b = filtered_b[filtered_b["bundle_segment"] == selected_segment]
+        if price_limit < max_p:
+            filtered_b = filtered_b[filtered_b["price"] <= price_limit]
+        if search_bundle:
+            norm_kw = _normalize_str(search_bundle)
+            filtered_b = filtered_b[filtered_b["study_name"].apply(lambda n: norm_kw in _normalize_str(n))]
 
-    c_list, c_calc = st.columns([3, 2])
+        st.markdown(f"Mostrando **{len(filtered_b)}** paquetes y perfiles de Chopo:")
 
-    with c_list:
-        st.markdown(f"#### 📋 Estudios Seleccionados ({len(df_quote)}):")
-        disp_q = df_quote[["study_name", "category", "price"]].copy()
-        disp_q.columns = ["Estudio", "Especialidad", "Precio Chopo (MXN)"]
-        st.dataframe(
-            disp_q,
+        disp_b = filtered_b[["study_name", "bundle_segment", "price", "list_price", "discount_pct", "url"]].copy()
+        disp_b.columns = ["Paquete / Perfil Chopo", "Segmento", "Precio Web Chopo", "Precio Mostrador (Lista)", "Descuento Chopo (%)", "Enlace"]
+
+        event_b = st.dataframe(
+            disp_b,
             use_container_width=True,
+            height=380,
+            on_select="rerun",
+            selection_mode="single-row",
             column_config={
-                "Precio Chopo (MXN)": st.column_config.NumberColumn(format="$%.2f"),
+                "Precio Web Chopo": st.column_config.NumberColumn(format="$%.2f"),
+                "Precio Mostrador (Lista)": st.column_config.NumberColumn(format="$%.2f"),
+                "Descuento Chopo (%)": st.column_config.NumberColumn(format="%.1f%%"),
+                "Enlace": st.column_config.LinkColumn("Enlace Web"),
             }
         )
 
-    with c_calc:
-        st.markdown("#### 💰 Resumen Financiero:")
-        subtotal = float(df_quote["price"].sum())
-        st.metric("Subtotal Suma Individual", f"${subtotal:,.2f} MXN")
+        # Acción al seleccionar fila
+        sel_bundle_rows = getattr(event_b, "selection", None)
+        sel_b_idx = sel_bundle_rows.rows[0] if (sel_bundle_rows and sel_bundle_rows.rows) else None
 
-        col_d1, col_d2 = st.columns(2)
-        with col_d1:
-            discount_pct = st.slider("Descuento especial (%)", 0, 50, 10, step=5)
-        with col_d2:
-            margin_pct = st.slider("Comisión / Margen (%)", 0, 50, 0, step=5)
+        if sel_b_idx is not None and sel_b_idx < len(filtered_b):
+            selected_pkg = filtered_b.iloc[sel_b_idx]
+            b_name = selected_pkg["study_name"]
+            b_price = float(selected_pkg["price"])
+            b_list = float(selected_pkg["list_price"])
+            b_disc = float(selected_pkg["discount_pct"])
 
-        discount_amount = subtotal * (discount_pct / 100.0)
-        total_after_discount = subtotal - discount_amount
-        margin_amount = total_after_discount * (margin_pct / 100.0)
-        final_total = total_after_discount + margin_amount
+            st.markdown("---")
+            c_info_b, c_btn_b = st.columns([4, 2])
+            with c_info_b:
+                st.info(f"📌 **Paquete Seleccionado:** **{b_name}** | Precio Web Chopo: **${b_price:,.2f} MXN** | Lista: `${b_list:,.2f} MXN` ({b_disc:.1f}% desc.)")
+            with c_btn_b:
+                if st.button("🎯 COMPETIR CONTRA ESTE PAQUETE", type="primary", use_container_width=True, key=f"btn_comp_{b_name}"):
+                    st.session_state.active_chopo_bundle = b_name
+                    st.session_state.sim_mode = "Competir contra Paquete Chopo"
+                    st.session_state.our_package_name = f"Alternativa a {b_name}"
+                    st.session_state.our_selling_price = round(b_price * 0.85, 2)
+                    st.toast(f"¡Cargado '{b_name}' en el Simulador!")
+                    st.rerun()
+        else:
+            st.caption("💡 **Tip:** Haz clic en cualquier paquete de la tabla para seleccionarlo y activar el botón directo para modelar tu contraoferta.")
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # SUBTAB 2: Simulador de Estrategia vs Chopo
+    # ═══════════════════════════════════════════════════════════════════════════
+    with subtab2:
+        st.markdown("#### 🎯 Simulador de Estrategia y Fijación de Precios")
+        st.caption("Modela tu contraoferta comercial: compara el precio de tu clínica contra la competencia, proyecta el ahorro que le darás a tus clientes y analiza tu margen bruto operativo.")
+
+        col_mode, col_mode_info = st.columns([3, 2])
+        with col_mode:
+            current_idx = 0 if st.session_state.sim_mode == "Armar a la carta (Suma de estudios)" else 1
+            sim_mode_choice = st.radio(
+                "Enfoque de comparación:",
+                ["Armar a la carta (Suma de estudios)", "Competir contra Paquete Chopo"],
+                index=current_idx,
+                horizontal=True,
+                key="sim_mode_selector"
+            )
+            st.session_state.sim_mode = sim_mode_choice
+
+        with col_mode_info:
+            if sim_mode_choice == "Armar a la carta (Suma de estudios)":
+                st.caption("🔹 Agrupas varios análisis clínicos individuales y los comparas contra la suma de lo que Chopo cobra por ellos.")
+            else:
+                st.caption("🔹 Tomas un paquete o check-up oficial de Chopo (ej. Check Up Básico) y fijas el precio de tu versión competitiva.")
+
+        st.markdown("---")
+
+        chopo_benchmark = 0.0
+        df_selected_studies = pd.DataFrame()
+
+        # ── Modo 1: A la carta ────────────────────────────────────────────────
+        if sim_mode_choice == "Armar a la carta (Suma de estudios)":
+            def _find_matches(keywords: list[str]) -> list[str]:
+                found = []
+                for kw in keywords:
+                    norm_kw = _normalize_str(kw)
+                    m = df[df["study_name"].apply(lambda s: norm_kw in _normalize_str(s))]
+                    if not m.empty:
+                        m_with_p = m.dropna(subset=["price"]).sort_values("price")
+                        if not m_with_p.empty:
+                            found.append(m_with_p.iloc[0]["study_name"])
+                        else:
+                            found.append(m.iloc[0]["study_name"])
+                return list(dict.fromkeys(found))
+
+            st.markdown("**⚡ Carga Rápida de Paquetes Frecuentes (1 clic):**")
+            p1, p2, p3, p4, p5, p6, p7 = st.columns(7)
+            with p1:
+                if st.button("🩺 Check-up Básico", use_container_width=True):
+                    st.session_state.quote_selected = _find_matches(["GLUCOSA", "BIOMETRIA HEMATICA", "EXAMEN GENERAL DE ORINA"])
+                    st.session_state.our_package_name = "Check-Up Básico Preventivo"
+                    st.session_state.our_selling_price = 0.0
+                    st.rerun()
+            with p2:
+                if st.button("🧪 Química 45 + BH", use_container_width=True):
+                    st.session_state.quote_selected = _find_matches(["QUIMICA INTEGRAL DE 45 ELEMENTOS", "BIOMETRIA HEMATICA"])
+                    st.session_state.our_package_name = "Perfil Bioquímico Integral 45"
+                    st.session_state.our_selling_price = 0.0
+                    st.rerun()
+            with p3:
+                if st.button("🩸 Tiroideo", use_container_width=True):
+                    st.session_state.quote_selected = _find_matches(["TIROIDEO", "TSH", "T3"])
+                    st.session_state.our_package_name = "Perfil Tiroideo Diagnóstico"
+                    st.session_state.our_selling_price = 0.0
+                    st.rerun()
+            with p4:
+                if st.button("🥗 Lipídico", use_container_width=True):
+                    st.session_state.quote_selected = _find_matches(["COLESTEROL TOTAL", "TRIGLICERIDOS", "LIPIDOS", "GLUCOSA"])
+                    st.session_state.our_package_name = "Perfil Lipídico Cardiovascular"
+                    st.session_state.our_selling_price = 0.0
+                    st.rerun()
+            with p5:
+                if st.button("🤰 Prenatal", use_container_width=True):
+                    st.session_state.quote_selected = _find_matches(["BIOMETRIA HEMATICA", "EXAMEN GENERAL DE ORINA", "GLUCOSA", "VDRL"])
+                    st.session_state.our_package_name = "Perfil Prenatal Integral"
+                    st.session_state.our_selling_price = 0.0
+                    st.rerun()
+            with p6:
+                if st.button("👨 Prostático", use_container_width=True):
+                    st.session_state.quote_selected = _find_matches(["ANTIGENO PROSTATICO", "BIOMETRIA HEMATICA", "EXAMEN GENERAL DE ORINA"])
+                    st.session_state.our_package_name = "Perfil de Salud Masculina / Próstata"
+                    st.session_state.our_selling_price = 0.0
+                    st.rerun()
+            with p7:
+                if st.button("🧹 Limpiar", use_container_width=True):
+                    st.session_state.quote_selected = []
+                    st.session_state.our_selling_price = 0.0
+                    st.rerun()
+
+            all_studies = sorted(df["study_name"].dropna().unique().tolist())
+            selected = st.multiselect(
+                "🔍 Selecciona los estudios que integran este paquete:",
+                options=all_studies,
+                default=st.session_state.quote_selected,
+                key="quote_multiselect_input",
+            )
+            st.session_state.quote_selected = selected
+
+            if not selected:
+                st.info("👆 Selecciona estudios en el buscador de arriba o haz clic en alguno de los paquetes rápidos para iniciar la simulación.")
+                return
+
+            df_selected_studies = df[df["study_name"].isin(selected)].copy().drop_duplicates(subset=["study_name"])
+            df_selected_studies["price"] = df_selected_studies["price"].fillna(0.0)
+            chopo_benchmark = float(df_selected_studies["price"].sum())
+
+            # Tabla de estudios seleccionados
+            st.markdown(f"**Estudios incluidos en la cotización ({len(df_selected_studies)}):**")
+            disp_sel = df_selected_studies[["study_name", "category", "price", "list_price"]].copy()
+            disp_sel.columns = ["Estudio", "Especialidad", "Precio Web Chopo", "Precio Mostrador Chopo"]
+            st.dataframe(
+                disp_sel,
+                use_container_width=True,
+                height=min(220, 35 * len(disp_sel) + 40),
+                column_config={
+                    "Precio Web Chopo": st.column_config.NumberColumn(format="$%.2f"),
+                    "Precio Mostrador Chopo": st.column_config.NumberColumn(format="$%.2f"),
+                }
+            )
+
+            # Detector de paquetes Chopo que compiten con esta selección
+            bundles_match = df[df["is_bundle"] & df["price"].notna()]
+            cheaper_b = bundles_match[bundles_match["price"] <= chopo_benchmark].sort_values("price", ascending=False).head(3)
+            if not cheaper_b.empty and len(selected) >= 2:
+                st.info("💡 **Inteligencia Competitiva:** Chopo tiene estos paquetes armados con precio menor a la suma de tus estudios sueltos:")
+                c_b_cols = st.columns(len(cheaper_b))
+                for idx, (_, b_row) in enumerate(cheaper_b.iterrows()):
+                    with c_b_cols[idx]:
+                        st.markdown(f"**{b_row['study_name'][:36]}**")
+                        st.markdown(f"Precio Chopo: **${b_row['price']:,.2f} MXN**")
+                        diff_b = chopo_benchmark - b_row["price"]
+                        st.caption(f"Chopo lo vende ${diff_b:,.2f} más barato que sus estudios sueltos.")
+
+        # ── Modo 2: Competir contra paquete Chopo ─────────────────────────────
+        else:
+            df_bundles_only = df[df["is_bundle"] & df["price"].notna()].sort_values("price", ascending=True)
+            bundle_names = df_bundles_only["study_name"].tolist()
+
+            default_idx = 0
+            if st.session_state.active_chopo_bundle and st.session_state.active_chopo_bundle in bundle_names:
+                default_idx = bundle_names.index(st.session_state.active_chopo_bundle)
+
+            target_bundle = st.selectbox(
+                "Selecciona el paquete o check-up oficial de Chopo a vencer:",
+                options=bundle_names,
+                index=default_idx,
+                key="target_chopo_bundle_sel"
+            )
+            st.session_state.active_chopo_bundle = target_bundle
+
+            bundle_data = df_bundles_only[df_bundles_only["study_name"] == target_bundle].iloc[0]
+            chopo_benchmark = float(bundle_data["price"])
+            chopo_list_price = float(bundle_data["list_price"])
+            chopo_discount = float(bundle_data["discount_pct"])
+
+            c_b1, c_b2, c_b3, c_b4 = st.columns(4)
+            with c_b1:
+                st.metric("Precio Web Chopo (Benchmark)", f"${chopo_benchmark:,.2f} MXN")
+            with c_b2:
+                st.metric("Precio Mostrador Chopo", f"${chopo_list_price:,.2f} MXN")
+            with c_b3:
+                st.metric("Descuento que Ofrece Chopo", f"{chopo_discount:.1f}%")
+            with c_b4:
+                st.metric("Segmento", bundle_data["bundle_segment"])
+
+        st.markdown("---")
+
+        # ── Sección de Fijación de Precios de Nuestra Clínica ──────────────────
+        st.markdown("#### ⚙️ Estrategia de Precio de Nuestra Clínica")
+
+        if st.session_state.our_selling_price <= 0.0 and chopo_benchmark > 0:
+            st.session_state.our_selling_price = round(chopo_benchmark * 0.85, 2)
+
+        st.markdown("**Sugerencias rápidas de precio competitivo (1 clic):**")
+        sug1, sug2, sug3, sug4 = st.columns(4)
+        with sug1:
+            if st.button("🟢 Ganar por 10% (-10% vs Chopo)", use_container_width=True):
+                st.session_state.our_selling_price = round(chopo_benchmark * 0.90, 2)
+                st.rerun()
+        with sug2:
+            if st.button("🟢 Ganar por 15% (-15% vs Chopo)", use_container_width=True):
+                st.session_state.our_selling_price = round(chopo_benchmark * 0.85, 2)
+                st.rerun()
+        with sug3:
+            if st.button("🟢 Ganar por 20% (-20% vs Chopo)", use_container_width=True):
+                st.session_state.our_selling_price = round(chopo_benchmark * 0.80, 2)
+                st.rerun()
+        with sug4:
+            if st.button("🟡 Paridad (Mismo precio)", use_container_width=True):
+                st.session_state.our_selling_price = round(chopo_benchmark, 2)
+                st.rerun()
+
+        col_pn, col_sp, col_ic = st.columns([3, 2, 2])
+        with col_pn:
+            pkg_name_in = st.text_input(
+                "Nombre Comercial de Nuestro Paquete:",
+                value=st.session_state.our_package_name,
+                key="pkg_name_input_field",
+                help="Este es el nombre con el que tu clínica ofrecerá el paquete a empresas y pacientes."
+            )
+            st.session_state.our_package_name = pkg_name_in
+
+        with col_sp:
+            our_price = st.number_input(
+                "💰 Nuestro Precio de Venta ($ MXN):",
+                min_value=0.0,
+                step=25.0,
+                value=float(st.session_state.our_selling_price),
+                key="our_selling_price_input_num",
+                help="El precio final con el que competirás contra Chopo."
+            )
+            st.session_state.our_selling_price = our_price
+
+        with col_ic:
+            internal_cost = st.number_input(
+                "🧪 Costo Interno / Reactivos ($ MXN):",
+                min_value=0.0,
+                step=10.0,
+                value=float(st.session_state.our_internal_cost),
+                key="our_internal_cost_input_num",
+                help="Opcional: ingresa el costo directo de reactivos y tubos para calcular tu margen bruto."
+            )
+            st.session_state.our_internal_cost = internal_cost
+
+        # ── Diagnóstico y KPIs Competitivos ───────────────────────────────────
+        diff_pesos = chopo_benchmark - our_price
+        diff_pct = (diff_pesos / chopo_benchmark * 100.0) if chopo_benchmark > 0 else 0.0
+
+        st.markdown("#### 📊 Diagnóstico de Competitividad:")
+        d1, d2, d3, d4 = st.columns(4)
+        with d1:
+            st.metric("Benchmark Chopo (Web)", f"${chopo_benchmark:,.2f} MXN")
+        with d2:
+            st.metric(f"Precio {pkg_name_in}", f"${our_price:,.2f} MXN")
+        with d3:
+            if diff_pesos > 0:
+                st.metric("Ahorro para el Cliente", f"${diff_pesos:,.2f} MXN", delta=f"{diff_pct:.1f}% más barato", delta_color="normal")
+            elif diff_pesos < 0:
+                st.metric("Diferencia vs Chopo", f"+${abs(diff_pesos):,.2f} MXN", delta=f"{abs(diff_pct):.1f}% más caro", delta_color="inverse")
+            else:
+                st.metric("Diferencia vs Chopo", "$0.00 MXN", delta="Paridad exacta", delta_color="off")
+        with d4:
+            if internal_cost > 0 and our_price > 0:
+                gross_margin = our_price - internal_cost
+                gross_pct = (gross_margin / our_price) * 100.0
+                st.metric("Margen Bruto Clínica", f"${gross_margin:,.2f} MXN", delta=f"{gross_pct:.1f}% margen")
+            else:
+                st.metric("Margen Bruto Clínica", "N/D", help="Ingresa tu costo de reactivos arriba para ver tu margen.")
+
+        # Veredicto Estratégico
+        if diff_pesos > 0:
+            st.success(f"🚀 **Estrategia Ganadora:** Tu clínica es **${diff_pesos:,.2f} MXN ({diff_pct:.1f}%) más económica que Chopo**. Es una propuesta sumamente atractiva para captar pacientes de mostrador o cerrar convenios corporativos por volumen.")
+        elif diff_pesos == 0:
+            st.warning("⚖️ **Estrategia de Paridad:** Estás al mismo precio exacto de Chopo. Para que el cliente te elija a ti en vez de a Chopo, tu propuesta comercial debe resaltar tu entrega el mismo día, toma a domicilio y atención sin filas.")
+        else:
+            st.error(f"⚠️ **Precio Superior a Chopo:** Tu precio está **${abs(diff_pesos):,.2f} MXN (+{abs(diff_pct):.1f}%) por encima de Chopo**. Si vas a cobrar más caro, asegúrate de que el paquete incluya estudios adicionales o beneficios exclusivos que justifiquen el sobreprecio.")
+
+        # Gráfico Comparativo Plotly
+        fig_comp = go.Figure()
+        fig_comp.add_trace(go.Bar(
+            name="Competencia: Chopo Web",
+            x=["Comparativa de Precios"],
+            y=[chopo_benchmark],
+            marker_color="#1a5276",
+            text=[f"${chopo_benchmark:,.2f}"],
+            textposition="auto",
+        ))
+        fig_comp.add_trace(go.Bar(
+            name=f"Nuestra Clínica: {pkg_name_in[:24]}",
+            x=["Comparativa de Precios"],
+            y=[our_price],
+            marker_color="#27ae60" if our_price <= chopo_benchmark else "#e67e22",
+            text=[f"${our_price:,.2f}"],
+            textposition="auto",
+        ))
+        if internal_cost > 0:
+            fig_comp.add_trace(go.Bar(
+                name="Nuestro Costo de Reactivos",
+                x=["Comparativa de Precios"],
+                y=[internal_cost],
+                marker_color="#95a5a6",
+                text=[f"${internal_cost:,.2f}"],
+                textposition="auto",
+            ))
+        fig_comp.update_layout(
+            barmode="group",
+            height=280,
+            margin=dict(t=20, b=20, l=20, r=20),
+            yaxis_title="Pesos ($ MXN)",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        )
+        st.plotly_chart(fig_comp, use_container_width=True)
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # SUBTAB 3: Propuesta Comercial & Comparativa B2B
+    # ═══════════════════════════════════════════════════════════════════════════
+    with subtab3:
+        st.markdown("#### 📄 Propuesta Comercial Competitiva (Nuestra Clínica vs Chopo)")
+        st.caption("Genera una propuesta formal para presentar a empresas maquiladoras, corporativos, aseguradoras o pacientes particulares, demostrando tu ventaja frente a laboratorios de cadena como Chopo.")
+
+        c_p1, c_p2, c_p3 = st.columns(3)
+        with c_p1:
+            prop_client = st.text_input("Nombre de la Empresa o Paciente:", value="Empresa / Cliente Corporativo", key="prop_client_name")
+        with c_p2:
+            prop_clinic = st.text_input("Nombre de Nuestra Clínica:", value="Laboratorio Clínico Mérida", key="prop_clinic_name")
+        with c_p3:
+            prop_validity = st.text_input("Vigencia de la Cotización:", value="15 días naturales", key="prop_validity_str")
+
+        st.markdown("**Selecciona los diferenciadores de valor agregado de tu clínica a incluir en la propuesta:**")
+        b_c1, b_c2 = st.columns(2)
+        with b_c1:
+            adv1 = st.checkbox("⚡ Entrega de resultados el mismo día (2 a 4 hrs para rutina)", value=True, key="adv_cb1")
+            adv2 = st.checkbox("🚐 Toma de muestra a domicilio o en planta sin costo en Mérida", value=True, key="adv_cb2")
+            adv3 = st.checkbox("🩺 Atención prioritaria y ágil sin filas de espera", value=True, key="adv_cb3")
+        with b_c2:
+            adv4 = st.checkbox("💼 Convenio empresarial con facturación y crédito a 30 días", value=True, key="adv_cb4")
+            adv5 = st.checkbox("💻 Plataforma en línea para consulta médica y descarga de resultados", value=True, key="adv_cb5")
+            adv6 = st.checkbox("🔬 Control de calidad certificado y validación por patólogos", value=True, key="adv_cb6")
+
+        selected_benefits = []
+        if adv1: selected_benefits.append("Entrega de resultados el mismo día (2 a 4 hrs para rutina)")
+        if adv2: selected_benefits.append("Toma de muestra a domicilio o en empresa sin costo en Mérida")
+        if adv3: selected_benefits.append("Atención personalizada y ágil sin filas de espera")
+        if adv4: selected_benefits.append("Convenio empresarial con facturación electrónica y crédito a 30 días")
+        if adv5: selected_benefits.append("Plataforma en línea para consulta médica y descarga de resultados")
+        if adv6: selected_benefits.append("Control de calidad certificado y validación por patólogos")
+
+        # Preparar ítems para la propuesta
+        items_for_proposal = []
+        if sim_mode_choice == "Armar a la carta (Suma de estudios)" and not df_selected_studies.empty:
+            ratio = (our_price / chopo_benchmark) if chopo_benchmark > 0 else 1.0
+            for _, r_it in df_selected_studies.iterrows():
+                ch_p = float(r_it["price"])
+                our_p = round(ch_p * ratio, 2)
+                sav = ch_p - our_p
+                sav_p = (sav / ch_p * 100.0) if ch_p > 0 else 0.0
+                items_for_proposal.append({
+                    "name": r_it["study_name"],
+                    "chopo_price": ch_p,
+                    "our_price": our_p,
+                    "savings": sav,
+                    "savings_pct": sav_p,
+                })
+        else:
+            target_name = st.session_state.active_chopo_bundle or "Paquete Integral Chopo"
+            items_for_proposal.append({
+                "name": f"{st.session_state.our_package_name} (Equivalente / Competidor de {target_name})",
+                "chopo_price": chopo_benchmark,
+                "our_price": our_price,
+                "savings": diff_pesos,
+                "savings_pct": diff_pct,
+            })
+
+        # Tabla comparativa visual
+        st.markdown("---")
+        st.markdown(f"##### 📋 Tabla Comparativa de Inversión: {st.session_state.our_package_name}")
+        df_prop_table = pd.DataFrame(items_for_proposal)
+        df_prop_disp = df_prop_table.copy()
+        df_prop_disp.columns = ["Concepto / Estudio", "Precio Chopo (Referencia)", f"Precio Especial {prop_clinic}", "Ahorro al Cliente ($)", "Ventaja (%)"]
+
+        st.dataframe(
+            df_prop_disp,
+            use_container_width=True,
+            column_config={
+                "Precio Chopo (Referencia)": st.column_config.NumberColumn(format="$%.2f"),
+                f"Precio Especial {prop_clinic}": st.column_config.NumberColumn(format="$%.2f"),
+                "Ahorro al Cliente ($)": st.column_config.NumberColumn(format="$%.2f"),
+                "Ventaja (%)": st.column_config.NumberColumn(format="%.1f%%"),
+            }
+        )
 
         st.markdown(f"""
-        <div style="background-color:#1a5276;color:white;padding:15px;border-radius:8px;text-align:center;">
-            <p style="margin:0;font-size:1.1rem;">TOTAL COTIZADO AL PACIENTE</p>
-            <h2 style="margin:5px 0 0 0;color:#2ecc71;">${final_total:,.2f} MXN</h2>
-            <small style="color:#d6eaf8;">Ahorro otorgado: ${discount_amount:,.2f} ({discount_pct}%)</small>
+        <div style="background-color:#1a5276;color:white;padding:15px;border-radius:8px;margin-bottom:20px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;">
+                <div>
+                    <h4 style="margin:0;color:#d6eaf8;">TOTAL PAQUETE {prop_client.upper()}</h4>
+                    <span style="font-size:0.95rem;">Precio en Chopo: <b>${chopo_benchmark:,.2f} MXN</b></span>
+                </div>
+                <div style="text-align:right;">
+                    <span style="font-size:0.9rem;color:#abebc6;">PRECIO ESPECIAL CONVENIO:</span>
+                    <h2 style="margin:0;color:#2ecc71;">${our_price:,.2f} MXN</h2>
+                    <span style="color:#f9e79f;font-weight:bold;">¡Ahorro directo de ${diff_pesos:,.2f} MXN ({diff_pct:.1f}%)!</span>
+                </div>
+            </div>
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown("---")
-    st.markdown("#### 💡 Asistente de Ahorro con Paquetes Integrales Chopo:")
-    bundles = df[df["category"].str.contains("Perfil|Paneles", case=False, na=False) | df["study_name"].str.contains("INTEGRAL|PERFIL|CHECK", case=False, na=False)].dropna(subset=["price"])
-    cheaper_bundles = bundles[bundles["price"] <= subtotal].sort_values("price").head(4)
+        # Ficha de texto para copiar a WhatsApp / Correo B2B
+        today_str = datetime.now().strftime("%d/%m/%Y")
+        items_bullets = "\n".join([f"  • {it['name']}: Chopo ${it['chopo_price']:,.2f} | Nosotros: ${it['our_price']:,.2f}" for it in items_for_proposal])
+        benefits_bullets = "\n".join([f"  ✓ {b}" for b in selected_benefits])
 
-    if not cheaper_bundles.empty and len(selected) > 1:
-        st.info("💡 En lugar de pedir estudios individuales, Chopo ofrece estos paquetes que podrían cubrir la necesidad a menor costo:")
-        b_cols = st.columns(min(4, len(cheaper_bundles)))
-        for idx, (_, b_row) in enumerate(cheaper_bundles.iterrows()):
-            with b_cols[idx]:
-                st.markdown(f"**{b_row['study_name'][:38]}**")
-                st.markdown(f"Precio: **${b_row['price']:,.2f} MXN**")
-                diff = subtotal - b_row['price']
-                st.caption(f"Ahorras **${diff:,.2f}** vs sueltos")
+        commercial_pitch = f"""💼 *PROPUESTA COMERCIAL - {prop_clinic.upper()}*
+🏢 *Presentado para:* {prop_client}
+📅 *Fecha:* {today_str} (Vigencia: {prop_validity})
+📦 *Paquete Solicitado:* {st.session_state.our_package_name}
 
-    st.markdown("---")
-    st.markdown("#### 📄 Ficha para el Paciente / Cliente:")
-    w1, w2, w3 = st.columns(3)
-    with w1:
-        patient_name = st.text_input("Nombre del Paciente", value="Paciente", key="q_pat_name")
-    with w2:
-        doctor_name = st.text_input("Médico / Clínica", value="Dr. Particular", key="q_doc_name")
-    with w3:
-        notes = st.text_input("Indicaciones de Ayuno", value="Ayuno de 8 a 12 horas. Presentar primera orina de la mañana.", key="q_notes")
+📊 *COMPARATIVA DE INVERSIÓN VS CADENAS NACIONALES (CHOPO):*
+{items_bullets}
 
-    today_str = datetime.now().strftime("%d/%m/%Y")
-    studies_text = "\n".join([f"  • {r['study_name']} - ${r['price']:,.2f}" for _, r in df_quote.iterrows()])
-    whatsapp_msg = f"""📋 *COTIZACIÓN DE ESTUDIOS CLÍNICOS*
-👤 *Paciente:* {patient_name}
-👨‍⚕️ *Solicitante:* {doctor_name}
-📅 *Fecha:* {today_str}
-📍 *Laboratorio de Referencia:* Chopo Mérida (Altabrisa)
+💰 *Inversión en Chopo:* ${chopo_benchmark:,.2f} MXN
+⭐ *PRECIO ESPECIAL {prop_clinic.upper()}:* ${our_price:,.2f} MXN
+🎉 *AHORRO DIRECTO PARA SU EMPRESA:* ${diff_pesos:,.2f} MXN ({diff_pct:.1f}% de descuento)
 
-*Estudios solicitados:*
-{studies_text}
+✨ *BENEFICIOS Y VALOR AGREGADO INCLUIDOS:*
+{benefits_bullets}
 
-💰 *Subtotal regular:* ${subtotal:,.2f} MXN
-🏷️ *Descuento aplicado:* {discount_pct}% (-${discount_amount:,.2f})
-✅ *TOTAL A PAGAR:* ${final_total:,.2f} MXN
-
-📌 *Indicaciones:*
-{notes}
+Quedamos a su entera disposición para agendar la toma de muestras o formalizar el convenio.
 """
+        st.markdown("##### 📱 Texto Comercial Listo para WhatsApp o Correo B2B:")
+        st.text_area("Copia este mensaje comercial y envíalo directamente a tu cliente o empresa:", value=commercial_pitch, height=220)
 
-    st.text_area("Copia este texto y pégalo directamente en WhatsApp:", value=whatsapp_msg, height=200)
+        # Botones de exportación a Excel
+        st.markdown("##### 📥 Descarga de Propuesta Comercial en Excel:")
+        excel_bytes = _generate_commercial_proposal_excel(
+            clinic_name=prop_clinic,
+            client_name=prop_client,
+            package_name=st.session_state.our_package_name,
+            items=items_for_proposal,
+            total_chopo=chopo_benchmark,
+            total_our=our_price,
+            savings=diff_pesos,
+            savings_pct=diff_pct,
+            benefits=selected_benefits,
+        )
 
-    col_exp, _ = st.columns([2, 5])
-    with col_exp:
-        quote_dict = df_quote[["study_name", "category", "price"]].to_dict("records")
-        if st.button("📥 Exportar Esta Cotización a Excel", use_container_width=True):
-            fp = export_to_excel(quote_dict)
-            st.success(f"Cotización exportada a: `{fp}`")
+        filename_clean = f"Propuesta_{_normalize_str(st.session_state.our_package_name)[:20].replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+
+        c_exp1, c_exp2 = st.columns([2, 3])
+        with c_exp1:
+            st.download_button(
+                label="📥 Descargar Propuesta en Excel (.xlsx)",
+                data=excel_bytes,
+                file_name=filename_clean,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                type="primary",
+            )
+        with c_exp2:
+            if st.button("💾 Guardar Copia en Carpeta exports/ del Servidor", use_container_width=True):
+                local_path = EXPORTS_DIR / filename_clean
+                with open(local_path, "wb") as f_out:
+                    f_out.write(excel_bytes)
+                st.success(f"Archivo guardado exitosamente en: `{local_path}`")
 
 
 # ── Tab: Scheduler & Configuración ────────────────────────────────────────────
@@ -1548,7 +2085,7 @@ def main():
         "⭐ Favoritos",
         "📋 Catálogo",
         "🏷️ Descuentos & Promos",
-        "💼 Cotizador de Paquetes",
+        "💼 Paquetes & Estrategia",
         "📊 Análisis",
         "📈 Historial",
         "🔔 Cambios",
