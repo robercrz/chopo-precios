@@ -128,7 +128,20 @@ def render_header():
         )
     with col2:
         st.markdown("&nbsp;", unsafe_allow_html=True)
-        _render_scrape_button()
+        is_admin = st.session_state.get("is_admin", False)
+        if is_admin:
+            _render_scrape_button()
+        else:
+            st.markdown(
+                """
+                <div style="text-align:right;padding-top:10px;">
+                    <span style="background:#eaf2f8;color:#2471a3;padding:6px 14px;border-radius:20px;font-size:0.85rem;font-weight:600;border:1px solid #d4e6f1;">
+                        👤 Modo Consulta
+                    </span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
 
 def _log_path() -> Path:
@@ -312,13 +325,50 @@ def render_sidebar(labs: list, prices: list) -> dict:
     )
 
     st.sidebar.markdown("---")
-    st.sidebar.markdown("### ⏰ Scheduler")
-    st.sidebar.info("Actualización automática: **6:00 AM** diario\n(Hora Mérida, Yucatán)")
+    is_admin = st.session_state.get("is_admin", False)
+    if is_admin:
+        st.sidebar.markdown("""
+        <div style="background:#e8f8f5;border:1px solid #a3e4d7;padding:10px;border-radius:8px;margin-bottom:10px;">
+            <span style="color:#117864;font-weight:bold;font-size:0.9rem;">👑 Modo Administrador</span><br/>
+            <small style="color:#16a085;">Controles de scraping y configuración activos</small>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.sidebar.button("🔒 Salir de Modo Admin", key="btn_drop_admin", use_container_width=True):
+            st.session_state["is_admin"] = False
+            st.rerun()
+
+        st.sidebar.markdown("### ⏰ Scheduler")
+        st.sidebar.info("Actualización automática: **6:00 AM** diario\n(Hora Mérida, Yucatán)")
+    else:
+        st.sidebar.markdown("""
+        <div style="background:#f4f6f7;border:1px solid #d5dbdb;padding:8px 10px;border-radius:8px;margin-bottom:10px;">
+            <span style="color:#566573;font-weight:bold;font-size:0.85rem;">👤 Modo Consulta</span><br/>
+            <small style="color:#7f8c8d;">Visualización de precios y análisis</small>
+        </div>
+        """, unsafe_allow_html=True)
+        with st.sidebar.expander("🔑 ¿Eres Administrador?", expanded=False):
+            with st.form("admin_unlock_form"):
+                admin_key = st.text_input("Clave de Administrador", type="password", placeholder="Escribe clave...")
+                if st.form_submit_button("🔓 Desbloquear", use_container_width=True):
+                    import os
+                    admin_pwd = "admin2026"
+                    try:
+                        if hasattr(st, "secrets") and "ADMIN_PASSWORD" in st.secrets:
+                            admin_pwd = str(st.secrets["ADMIN_PASSWORD"])
+                    except Exception:
+                        pass
+                    admin_pwd = os.getenv("ADMIN_PASSWORD", admin_pwd)
+                    if admin_key == admin_pwd:
+                        st.session_state["is_admin"] = True
+                        st.toast("👑 ¡Modo Administrador activado!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Clave incorrecta")
 
     st.sidebar.markdown("---")
-    st.sidebar.markdown("---")
-    if st.sidebar.button("🔒 Cerrar Sesión", use_container_width=True):
+    if st.sidebar.button("🚪 Cerrar Sesión", use_container_width=True):
         st.session_state["authenticated"] = False
+        st.session_state["is_admin"] = False
         st.rerun()
 
     return {
@@ -2021,18 +2071,25 @@ def render_logs_tab(scrape_log: list):
 
 
 def check_password() -> bool:
-    """Verifica si el usuario está autenticado. Si no, muestra la pantalla de login."""
+    """Verifica si el usuario está autenticado y asigna el rol de administrador o consulta."""
     if st.session_state.get("authenticated", False):
         return True
 
-    correct_password = "chopo2026"
+    user_password = "chopo2026"
+    admin_password = "admin2026"
+
     try:
-        if hasattr(st, "secrets") and "APP_PASSWORD" in st.secrets:
-            correct_password = st.secrets["APP_PASSWORD"]
+        if hasattr(st, "secrets"):
+            if "APP_PASSWORD" in st.secrets:
+                user_password = str(st.secrets["APP_PASSWORD"])
+            if "ADMIN_PASSWORD" in st.secrets:
+                admin_password = str(st.secrets["ADMIN_PASSWORD"])
     except Exception:
         pass
+
     import os
-    correct_password = os.getenv("APP_PASSWORD", correct_password)
+    user_password = os.getenv("APP_PASSWORD", user_password)
+    admin_password = os.getenv("ADMIN_PASSWORD", admin_password)
 
     _, col_login, _ = st.columns([1, 2, 1])
     with col_login:
@@ -2042,24 +2099,29 @@ def check_password() -> bool:
             <div style="background:#ffffff;padding:30px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.08);text-align:center;border:1px solid #e0e0e0;">
                 <h2 style="color:#1a5276;margin-bottom:5px;">🔬 Chopo Price Intelligence</h2>
                 <p style="color:#666;font-size:0.95rem;margin-bottom:20px;">Portal de Análisis de Precios · Mérida, Yucatán</p>
-                <p style="color:#333;font-size:0.9rem;text-align:left;margin-bottom:5px;">🔒 Ingresa la clave de acceso de tu equipo:</p>
+                <p style="color:#333;font-size:0.9rem;text-align:left;margin-bottom:5px;">🔒 Ingresa tu clave de acceso:</p>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
         with st.form("login_form"):
-            password_input = st.text_input("Clave de acceso", type="password", placeholder="Escribe la clave aquí...", label_visibility="collapsed")
+            password_input = st.text_input("Clave de acceso", type="password", placeholder="Escribe tu clave aquí...", label_visibility="collapsed")
             submit = st.form_submit_button("🔓 Ingresar al Portal", type="primary", use_container_width=True)
 
             if submit:
-                if password_input == correct_password:
+                if password_input == admin_password:
                     st.session_state["authenticated"] = True
+                    st.session_state["is_admin"] = True
+                    st.rerun()
+                elif password_input == user_password:
+                    st.session_state["authenticated"] = True
+                    st.session_state["is_admin"] = False
                     st.rerun()
                 else:
                     st.error("❌ Clave incorrecta. Por favor verifícala.")
 
-        st.caption("🔒 Acceso exclusivo para colaboradores y equipo autorizado.")
+        st.caption("🔒 Acceso protegido. El nivel de permisos se asigna automáticamente según tu clave.")
 
     return False
 
@@ -2081,36 +2143,64 @@ def main():
     render_kpis(prices, changes, scrape_log)
     st.markdown("---")
 
-    tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
-        "⭐ Favoritos",
-        "📋 Catálogo",
-        "🏷️ Descuentos & Promos",
-        "💼 Paquetes & Estrategia",
-        "📊 Análisis",
-        "📈 Historial",
-        "🔔 Cambios",
-        "⚙️ Scheduler & Config",
-        "🗂️ Logs",
-    ])
+    is_admin = st.session_state.get("is_admin", False)
 
-    with tab0:
-        render_favorites_tab(prices)
-    with tab1:
-        render_catalog_tab(prices, filters)
-    with tab2:
-        render_discounts_tab(prices)
-    with tab3:
-        render_quotation_tab(prices)
-    with tab4:
-        render_analysis_tab(prices, filters)
-    with tab5:
-        render_history_tab(labs)
-    with tab6:
-        render_changes_tab(changes)
-    with tab7:
-        render_scheduler_tab()
-    with tab8:
-        render_logs_tab(scrape_log)
+    if is_admin:
+        tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+            "⭐ Favoritos",
+            "📋 Catálogo",
+            "🏷️ Descuentos & Promos",
+            "💼 Paquetes & Estrategia",
+            "📊 Análisis",
+            "📈 Historial",
+            "🔔 Cambios",
+            "⚙️ Scheduler & Config",
+            "🗂️ Logs",
+        ])
+
+        with tab0:
+            render_favorites_tab(prices)
+        with tab1:
+            render_catalog_tab(prices, filters)
+        with tab2:
+            render_discounts_tab(prices)
+        with tab3:
+            render_quotation_tab(prices)
+        with tab4:
+            render_analysis_tab(prices, filters)
+        with tab5:
+            render_history_tab(labs)
+        with tab6:
+            render_changes_tab(changes)
+        with tab7:
+            render_scheduler_tab()
+        with tab8:
+            render_logs_tab(scrape_log)
+    else:
+        tab0, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+            "⭐ Favoritos",
+            "📋 Catálogo",
+            "🏷️ Descuentos & Promos",
+            "💼 Paquetes & Estrategia",
+            "📊 Análisis",
+            "📈 Historial",
+            "🔔 Cambios",
+        ])
+
+        with tab0:
+            render_favorites_tab(prices)
+        with tab1:
+            render_catalog_tab(prices, filters)
+        with tab2:
+            render_discounts_tab(prices)
+        with tab3:
+            render_quotation_tab(prices)
+        with tab4:
+            render_analysis_tab(prices, filters)
+        with tab5:
+            render_history_tab(labs)
+        with tab6:
+            render_changes_tab(changes)
 
 
 if __name__ == "__main__":
