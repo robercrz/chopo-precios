@@ -314,7 +314,10 @@ def render_sidebar(labs: list, prices: list) -> dict:
     st.sidebar.info("Actualización automática: **6:00 AM** diario\n(Hora Mérida, Yucatán)")
 
     st.sidebar.markdown("---")
-    st.sidebar.markdown("### 📥 Exportar")
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🔒 Cerrar Sesión", use_container_width=True):
+        st.session_state["authenticated"] = False
+        st.rerun()
 
     return {
         "lab": selected_lab,
@@ -1465,8 +1468,55 @@ def render_logs_tab(scrape_log: list):
         st.plotly_chart(fig, use_container_width=True)
 
 
+def check_password() -> bool:
+    """Verifica si el usuario está autenticado. Si no, muestra la pantalla de login."""
+    if st.session_state.get("authenticated", False):
+        return True
+
+    correct_password = "chopo2026"
+    try:
+        if hasattr(st, "secrets") and "APP_PASSWORD" in st.secrets:
+            correct_password = st.secrets["APP_PASSWORD"]
+    except Exception:
+        pass
+    import os
+    correct_password = os.getenv("APP_PASSWORD", correct_password)
+
+    _, col_login, _ = st.columns([1, 2, 1])
+    with col_login:
+        st.markdown("<div style='height:40px'></div>", unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div style="background:#ffffff;padding:30px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.08);text-align:center;border:1px solid #e0e0e0;">
+                <h2 style="color:#1a5276;margin-bottom:5px;">🔬 Chopo Price Intelligence</h2>
+                <p style="color:#666;font-size:0.95rem;margin-bottom:20px;">Portal de Análisis de Precios · Mérida, Yucatán</p>
+                <p style="color:#333;font-size:0.9rem;text-align:left;margin-bottom:5px;">🔒 Ingresa la clave de acceso de tu equipo:</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        with st.form("login_form"):
+            password_input = st.text_input("Clave de acceso", type="password", placeholder="Escribe la clave aquí...", label_visibility="collapsed")
+            submit = st.form_submit_button("🔓 Ingresar al Portal", type="primary", use_container_width=True)
+
+            if submit:
+                if password_input == correct_password:
+                    st.session_state["authenticated"] = True
+                    st.rerun()
+                else:
+                    st.error("❌ Clave incorrecta. Por favor verifícala.")
+
+        st.caption("🔒 Acceso exclusivo para colaboradores y equipo autorizado.")
+
+    return False
+
+
 # ── Main App ───────────────────────────────────────────────────────────────────
 def main():
+    if not check_password():
+        return
+
     initialize()
 
     prices, labs, changes, scrape_log = load_data()
