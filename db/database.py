@@ -451,6 +451,91 @@ def get_favorite_names(lab_key: str = None) -> set:
         conn.close()
 
 
+def get_bundle_detail(study_name: str) -> dict:
+    """Consulta los detalles y estudios incluidos de un paquete."""
+    conn = get_connection()
+    try:
+        row = conn.execute("""
+            SELECT study_name, url, description, included_text, bullets, fasting, custom_notes
+            FROM bundle_details
+            WHERE study_name = ?
+        """, (study_name,)).fetchone()
+        if not row:
+            return {}
+
+        import json
+        bullets_list = []
+        if row["bullets"]:
+            try:
+                bullets_list = json.loads(row["bullets"])
+            except Exception:
+                bullets_list = [b.strip() for b in row["bullets"].split("\n") if b.strip()]
+
+        return {
+            "study_name": row["study_name"],
+            "url": row["url"],
+            "description": row["description"] or "",
+            "included_text": row["included_text"] or "",
+            "bullets": bullets_list,
+            "fasting": row["fasting"] or "",
+            "custom_notes": row["custom_notes"] or "",
+        }
+    except Exception:
+        return {}
+    finally:
+        conn.close()
+
+
+def save_bundle_custom_notes(study_name: str, notes: str) -> bool:
+    """Guarda notas o desglose personalizado para un paquete."""
+    conn = get_connection()
+    try:
+        with conn:
+            conn.execute("""
+                UPDATE bundle_details
+                SET custom_notes = ?
+                WHERE study_name = ?
+            """, (notes, study_name))
+        return True
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+
+def get_all_bundle_details() -> dict:
+    """Retorna un diccionario mapeando study_name -> dict de detalles para todos los paquetes."""
+    conn = get_connection()
+    try:
+        rows = conn.execute("""
+            SELECT study_name, url, description, included_text, bullets, fasting, custom_notes
+            FROM bundle_details
+        """).fetchall()
+        import json
+        res = {}
+        for r in rows:
+            b_list = []
+            if r["bullets"]:
+                try:
+                    b_list = json.loads(r["bullets"])
+                except Exception:
+                    b_list = [b.strip() for b in r["bullets"].split("\n") if b.strip()]
+            res[r["study_name"]] = {
+                "study_name": r["study_name"],
+                "url": r["url"],
+                "description": r["description"] or "",
+                "included_text": r["included_text"] or "",
+                "bullets": b_list,
+                "fasting": r["fasting"] or "",
+                "custom_notes": r["custom_notes"] or "",
+            }
+        return res
+    except Exception:
+        return {}
+    finally:
+        conn.close()
+
+
 if __name__ == "__main__":
     init_db()
     print(f"Base de datos lista en: {DB_PATH}")

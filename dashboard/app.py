@@ -33,6 +33,9 @@ from db.database import (
     get_favorites,
     update_favorite_note,
     get_favorite_names,
+    get_bundle_detail,
+    save_bundle_custom_notes,
+    get_all_bundle_details,
 )
 from scraper.exporter import export_to_excel, export_to_csv
 from scraper.categorizer import classify_study, classify_all, get_category_counts, ALL_CATEGORIES
@@ -1396,6 +1399,15 @@ def render_quotation_tab(prices: list):
             norm_kw = _normalize_str(search_bundle)
             filtered_b = filtered_b[filtered_b["study_name"].apply(lambda n: norm_kw in _normalize_str(n))]
 
+        # Selector directo con autocompletado para paquetes
+        pkg_options = ["-- Busca o escribe aquí el nombre de cualquier paquete --"] + sorted(filtered_b["study_name"].tolist())
+        selected_pkg_from_dropdown = st.selectbox(
+            "🔍 Busca o selecciona un paquete para ver su desglose de estudios:",
+            options=pkg_options,
+            key="bundle_dropdown_picker_field",
+            help="Escribe el nombre de cualquier paquete para ver qué estudios incluye según Chopo."
+        )
+
         st.markdown(f"Mostrando **{len(filtered_b)}** paquetes y perfiles de Chopo:")
 
         disp_b = filtered_b[["study_name", "bundle_segment", "price", "list_price", "discount_pct", "url"]].copy()
@@ -1404,42 +1416,96 @@ def render_quotation_tab(prices: list):
         event_b = st.dataframe(
             disp_b,
             use_container_width=True,
-            height=380,
+            height=360,
+            hide_index=True,
             on_select="rerun",
             selection_mode="single-row",
             column_config={
-                "Precio Web Chopo": st.column_config.NumberColumn(format="$%.2f"),
-                "Precio Mostrador (Lista)": st.column_config.NumberColumn(format="$%.2f"),
-                "Descuento Chopo (%)": st.column_config.NumberColumn(format="%.1f%%"),
-                "Enlace": st.column_config.LinkColumn("Enlace Web"),
+                "Paquete / Perfil Chopo": st.column_config.TextColumn("Paquete / Perfil Chopo", width="large"),
+                "Segmento": st.column_config.TextColumn("Segmento", width="medium"),
+                "Precio Web Chopo": st.column_config.NumberColumn(format="$%.2f", width="small"),
+                "Precio Mostrador (Lista)": st.column_config.NumberColumn(format="$%.2f", width="small"),
+                "Descuento Chopo (%)": st.column_config.NumberColumn(format="%.1f%%", width="small"),
+                "Enlace": st.column_config.LinkColumn("Enlace Web", width="small"),
             }
         )
 
-        # Acción al seleccionar fila
-        sel_bundle_rows = getattr(event_b, "selection", None)
-        sel_b_idx = sel_bundle_rows.rows[0] if (sel_bundle_rows and sel_bundle_rows.rows) else None
-
-        if sel_b_idx is not None and sel_b_idx < len(filtered_b):
-            selected_pkg = filtered_b.iloc[sel_b_idx]
-            b_name = selected_pkg["study_name"]
-            b_price = float(selected_pkg["price"])
-            b_list = float(selected_pkg["list_price"])
-            b_disc = float(selected_pkg["discount_pct"])
-
-            st.markdown("---")
-            c_info_b, c_btn_b = st.columns([4, 2])
-            with c_info_b:
-                st.info(f"📌 **Paquete Seleccionado:** **{b_name}** | Precio Web Chopo: **${b_price:,.2f} MXN** | Lista: `${b_list:,.2f} MXN` ({b_disc:.1f}% desc.)")
-            with c_btn_b:
-                if st.button("🎯 COMPETIR CONTRA ESTE PAQUETE", type="primary", use_container_width=True, key=f"btn_comp_{b_name}"):
-                    st.session_state.active_chopo_bundle = b_name
-                    st.session_state.sim_mode = "Competir contra Paquete Chopo"
-                    st.session_state.our_package_name = f"Alternativa a {b_name}"
-                    st.session_state.our_selling_price = round(b_price * 0.85, 2)
-                    st.toast(f"¡Cargado '{b_name}' en el Simulador!")
-                    st.rerun()
+        # Determinar paquete seleccionado (por dropdown o por clic en tabla)
+        active_b_name = None
+        if selected_pkg_from_dropdown and selected_pkg_from_dropdown != "-- Busca o escribe aquí el nombre de cualquier paquete --":
+            active_b_name = selected_pkg_from_dropdown
         else:
-            st.caption("💡 **Tip:** Haz clic en cualquier paquete de la tabla para seleccionarlo y activar el botón directo para modelar tu contraoferta.")
+            sel_bundle_rows = getattr(event_b, "selection", None)
+            if sel_bundle_rows and sel_bundle_rows.rows and sel_bundle_rows.rows[0] < len(filtered_b):
+                active_b_name = filtered_b.iloc[sel_bundle_rows.rows[0]]["study_name"]
+
+        if active_b_name:
+            m_pkg = filtered_b[filtered_b["study_name"] == active_b_name]
+            if not m_pkg.empty:
+                selected_pkg = m_pkg.iloc[0]
+                b_name = selected_pkg["study_name"]
+                b_price = float(selected_pkg["price"])
+                b_list = float(selected_pkg["list_price"])
+                b_disc = float(selected_pkg["discount_pct"])
+
+                st.markdown("---")
+                c_info_b, c_btn_b = st.columns([4, 2])
+                with c_info_b:
+                    st.info(f"📌 **Paquete Seleccionado:** **{b_name}** | Precio Web Chopo: **${b_price:,.2f} MXN** | Lista: `${b_list:,.2f} MXN` ({b_disc:.1f}% desc.)")
+                with c_btn_b:
+                    if st.button("🎯 COMPETIR CONTRA ESTE PAQUETE", type="primary", use_container_width=True, key=f"btn_comp_{b_name}"):
+                        st.session_state.active_chopo_bundle = b_name
+                        st.session_state.sim_mode = "Competir contra Paquete Chopo"
+                        st.session_state.our_package_name = f"Alternativa a {b_name}"
+                        st.session_state.our_selling_price = round(b_price * 0.85, 2)
+                        st.toast(f"¡Cargado '{b_name}' en el Simulador!")
+                        st.rerun()
+
+                # Desglose de lo que incluye el paquete (extraído de Chopo)
+                b_info = get_bundle_detail(b_name)
+                if b_info:
+                    with st.expander(f"🔬 ¿Qué incluye '{b_name}' según Chopo?", expanded=True):
+                        bullets = b_info.get("bullets", [])
+                        inc_txt = b_info.get("included_text", "")
+                        desc_txt = b_info.get("description", "")
+                        fasting_txt = b_info.get("fasting", "")
+                        custom_notes = b_info.get("custom_notes", "")
+
+                        if bullets:
+                            st.markdown("**📋 Estudios y parámetros incluidos detectados:**")
+                            b_cols = st.columns(min(3, max(1, len(bullets))))
+                            for idx, b_item in enumerate(bullets):
+                                b_cols[idx % min(3, max(1, len(bullets)))].markdown(f"✓ {b_item}")
+                        elif inc_txt:
+                            st.markdown(f"**📋 Desglose incluido reportado por Chopo:**\n\n{inc_txt}")
+
+                        if desc_txt and not bullets and not inc_txt:
+                            st.markdown(f"**ℹ️ Descripción del paquete:**\n\n{desc_txt}")
+                        elif desc_txt and (bullets or inc_txt):
+                            with st.expander("ℹ️ Ver descripción clínica completa"):
+                                st.write(desc_txt)
+
+                        if fasting_txt:
+                            st.caption(f"⏰ **Indicaciones de ayuno / preparación:** {fasting_txt}")
+
+                        # Editor de notas internas de la clínica
+                        st.markdown("---")
+                        col_nt, col_nt_btn = st.columns([4, 1])
+                        with col_nt:
+                            new_note = st.text_input(
+                                "📝 Notas o desglose interno de tu clínica para este paquete:",
+                                value=custom_notes,
+                                key=f"note_bundle_{b_name}",
+                                placeholder="Ej: Nosotros incluiremos Biometría + Química 45 + EGO"
+                            )
+                        with col_nt_btn:
+                            st.markdown("&nbsp;", unsafe_allow_html=True)
+                            if st.button("💾 Guardar", key=f"save_btn_b_{b_name}", use_container_width=True):
+                                save_bundle_custom_notes(b_name, new_note)
+                                st.toast("✅ Nota guardada en la base de datos")
+                                st.rerun()
+        else:
+            st.caption("💡 **Tip:** Selecciona cualquier paquete en el buscador superior o en la tabla para ver qué estudios incluye y modelar tu contraoferta.")
 
     # ═══════════════════════════════════════════════════════════════════════════
     # SUBTAB 2: Simulador de Estrategia vs Chopo
@@ -1605,6 +1671,34 @@ def render_quotation_tab(prices: list):
                 st.metric("Descuento que Ofrece Chopo", f"{chopo_discount:.1f}%")
             with c_b4:
                 st.metric("Segmento", bundle_data["bundle_segment"])
+
+            # Desglose de lo que incluye este paquete según Chopo
+            b_detail = get_bundle_detail(target_bundle)
+            if b_detail:
+                bullets = b_detail.get("bullets", [])
+                inc_text = b_detail.get("included_text", "")
+                desc = b_detail.get("description", "")
+                fasting = b_detail.get("fasting", "")
+                custom = b_detail.get("custom_notes", "")
+
+                with st.expander(f"🔬 ¿Qué incluye '{target_bundle}' según Chopo?", expanded=True if (bullets or inc_text) else False):
+                    if bullets:
+                        st.markdown("**Estudios y parámetros incluidos reportados por Chopo:**")
+                        b_cols = st.columns(min(3, max(1, len(bullets))))
+                        for idx, b_item in enumerate(bullets):
+                            b_cols[idx % min(3, max(1, len(bullets)))].markdown(f"✓ {b_item}")
+                    elif inc_text:
+                        st.markdown(f"**Desglose incluido:**\n\n{inc_text}")
+                    elif desc:
+                        st.markdown(f"**Descripción clínica:**\n\n{desc}")
+                    else:
+                        st.caption("Chopo no especifica los estudios desglosados en su web para este paquete.")
+
+                    if fasting:
+                        st.info(f"⏰ **Indicaciones de ayuno / preparación:** {fasting}")
+
+                    if custom:
+                        st.success(f"📝 **Notas internas de tu clínica:** {custom}")
 
         st.markdown("---")
 
