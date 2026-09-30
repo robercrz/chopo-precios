@@ -1805,6 +1805,7 @@ def render_favorites_tab(prices: list, **kwargs):
         name = fav["study_name"]
         price = fav.get("current_price")
         price_raw = fav.get("current_price_raw")
+        p_num = _clean_price(price)
         change = fav.get("price_change")
         change_pct = fav.get("price_change_pct")
         note = fav.get("note") or ""
