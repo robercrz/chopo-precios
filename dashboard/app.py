@@ -1609,15 +1609,11 @@ def render_favorites_tab(prices: list, **kwargs):
                     st.metric("⚖️ Costo Idéntico", "$0.00 MXN", delta="Mismo precio exacto", delta_color="off")
 
             if net_basket_diff > 0:
-                st.success(
-                    f"💡 **Recomendación para Cotización:** Si un paciente se realiza todos estos {len(comparable_basket)} estudios en conjunto, "
-                    f"**conviene cotizarlos en LCM**, logrando un ahorro neto de **${net_basket_diff:,.2f} MXN ({net_basket_pct}%)** frente a Chopo Mérida Altabrisa."
-                )
+                txt_b = f"💡 **Recomendación para Cotización:** Si un paciente se realiza todos estos {len(comparable_basket)} estudios en conjunto, **conviene cotizarlos en LCM**, logrando un ahorro neto de **${net_basket_diff:,.2f} MXN ({net_basket_pct}%)** frente a Chopo Mérida Altabrisa."
+                st.success(txt_b.replace("$", r"\$"))
             elif net_basket_diff < 0:
-                st.info(
-                    f"💡 **Recomendación para Cotización:** En la canasta acumulada, **Chopo Mérida se encuentra ${abs(net_basket_diff):,.2f} MXN ({net_basket_pct}%) por debajo** "
-                    f"de la tarifa regular de LCM."
-                )
+                txt_b = f"💡 **Recomendación para Cotización:** En la canasta acumulada, **Chopo Mérida se encuentra ${abs(net_basket_diff):,.2f} MXN ({net_basket_pct}%) por debajo** de la tarifa regular de LCM."
+                st.info(txt_b.replace("$", r"\$"))
 
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
@@ -1745,15 +1741,15 @@ def render_favorites_tab(prices: list, **kwargs):
 
                 if change and change != 0:
                     delta_chg_str = f"+${change:.2f} (+{change_pct:.1f}%)" if change > 0 else f"-${abs(change):.2f} ({change_pct:.1f}%)"
-                    st.caption(f"📈 Variación reciente en Chopo: **{delta_chg_str}**")
+                    st.caption(f"📈 Variación reciente en Chopo: **{delta_chg_str}**".replace("$", r"\$"))
 
                 thr_num = _clean_price(threshold)
                 p_num = _clean_price(price)
                 if thr_num and p_num:
                     if p_num > thr_num:
-                        st.warning(f"⚠️ El precio de Chopo (${p_num:,.2f}) supera tu umbral de alerta (${thr_num:,.2f})")
+                        st.warning(f"⚠️ El precio de Chopo (${p_num:,.2f}) supera tu umbral de alerta (${thr_num:,.2f})".replace("$", r"\$"))
                     else:
-                        st.caption(f"✅ Precio bajo umbral de ${thr_num:,.2f}")
+                        st.caption(f"✅ Precio bajo umbral de ${thr_num:,.2f}".replace("$", r"\$"))
 
             # ── 2. Divisor VS ─────────────────────────────────────────────────
             with col_vs:
@@ -1829,16 +1825,20 @@ def render_favorites_tab(prices: list, **kwargs):
             if has_lcm and p_val and best_lcm_val:
                 diff_val = p_val - best_lcm_val
                 diff_p = round((abs(diff_val) / p_val) * 100, 1) if p_val > 0 else 0
+                raw_expl = str(best_calc.get('explanation', ''))
+                safe_expl = raw_expl.replace('$', r'\$')
 
                 if diff_val > 0:
+                    diff_tag = f"-${diff_val:,.2f} MXN".replace("$", r"\$")
                     st.success(f"""
-                    🎉 **Veredicto Comercial: LCM es más económico (-${diff_val:,.2f} MXN / -{diff_p}%)**  
-                    {best_calc.get('explanation', '')}  
+                    🎉 **Veredicto Comercial: LCM es más económico ({diff_tag} / -{diff_p}%)**  
+                    {safe_expl}  
                     El paciente ahorra realizándolo en **LCM** comparado con la tarifa web de Chopo.
                     """)
                 elif diff_val < 0:
+                    diff_tag = f"-${abs(diff_val):,.2f} MXN".replace("$", r"\$")
                     st.warning(f"""
-                    ⚠️ **Veredicto Comercial: Chopo ofrece menor precio (-${abs(diff_val):,.2f} MXN / -{diff_p}%)**  
+                    ⚠️ **Veredicto Comercial: Chopo ofrece menor precio ({diff_tag} / -{diff_p}%)**  
                     Chopo Mérida Altabrisa mantiene una tarifa web más baja que la mejor opción de LCM para este estudio individual.
                     """)
                 else:
@@ -1848,32 +1848,38 @@ def render_favorites_tab(prices: list, **kwargs):
             c_actions_left, c_actions_right = st.columns([1.6, 1.4])
 
             with c_actions_left:
-                # Modificación rápida de precio LCM
+                # Modificación rápida de precio LCM (evitando anidar expanders dentro de expanders)
                 if has_lcm and fav.get("lcm_code"):
-                    with st.expander(f"✏️ ¿El precio de LCM ({fav['lcm_code']}) cambió o está desfasado?", expanded=False):
-                        st.caption(f"Actualiza el precio de `{fav['lcm_code']}` - **{fav['lcm_name']}**:")
-                        c_p_in, c_n_in = st.columns([1, 1.5])
-                        with c_p_in:
-                            new_lcm_val = st.number_input(
-                                "Nuevo precio LCM ($):",
-                                min_value=0.0,
-                                max_value=200000.0,
-                                value=float(lcm_p or 0.0),
-                                step=10.0,
-                                format="%.2f",
-                                key=f"edit_fav_lcm_{fav['lcm_code']}_{name}"
-                            )
-                        with c_n_in:
-                            new_lcm_note = st.text_input(
-                                "Motivo / Fecha:",
-                                value=fav.get("manual_edit_notes", ""),
-                                placeholder="Ej: Ajuste de lista Octubre",
-                                key=f"edit_fav_note_{fav['lcm_code']}_{name}"
-                            )
-                        if st.button("💾 Guardar Precio LCM", key=f"save_fav_lcm_{fav['lcm_code']}_{name}", type="primary"):
-                            save_price_override(fav["lcm_code"], fav["lcm_name"], new_lcm_val, new_lcm_note)
-                            st.success(f"✅ Precio LCM actualizado a ${new_lcm_val:,.2f} MXN")
-                            st.rerun()
+                    with st.container(border=True):
+                        show_edit_lcm = st.checkbox(
+                            f"✏️ ¿Modificar o ajustar precio de LCM ({fav['lcm_code']})?",
+                            key=f"chk_edit_{fav['lcm_code']}_{name}",
+                            help="Haz clic para sobreescribir el precio de lista de LCM si ha cambiado"
+                        )
+                        if show_edit_lcm:
+                            st.caption(f"Actualiza el precio de `{fav['lcm_code']}` - **{fav['lcm_name']}**:")
+                            c_p_in, c_n_in = st.columns([1, 1.5])
+                            with c_p_in:
+                                new_lcm_val = st.number_input(
+                                    "Nuevo precio LCM ($):",
+                                    min_value=0.0,
+                                    max_value=200000.0,
+                                    value=float(lcm_p or 0.0),
+                                    step=10.0,
+                                    format="%.2f",
+                                    key=f"edit_fav_lcm_{fav['lcm_code']}_{name}"
+                                )
+                            with c_n_in:
+                                new_lcm_note = st.text_input(
+                                    "Motivo / Fecha:",
+                                    value=fav.get("manual_edit_notes", ""),
+                                    placeholder="Ej: Ajuste de lista Octubre",
+                                    key=f"edit_fav_note_{fav['lcm_code']}_{name}"
+                                )
+                            if st.button("💾 Guardar Precio LCM", key=f"save_fav_lcm_{fav['lcm_code']}_{name}", type="primary"):
+                                save_price_override(fav["lcm_code"], fav["lcm_name"], new_lcm_val, new_lcm_note)
+                                st.success(f"✅ Precio LCM actualizado a ${new_lcm_val:,.2f} MXN")
+                                st.rerun()
 
                 # Mini historial temporal de Chopo
                 try:

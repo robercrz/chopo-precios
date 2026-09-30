@@ -793,27 +793,27 @@ def calculate_best_lcm_price(
     p_per = promo_info.get("period", "Campaña") if promo_info else ""
     if best_rule == "PROMOCION":
         promo_stat = promo_info.get("status", "")
-        prefix_promo = f"🎉 **Aplica Tarifa Promoción {p_per} (${price_promo:,.2f})**"
+        prefix_promo = f"🎉 **Aplica Tarifa Promoción {p_per} (\\${price_promo:,.2f})**"
         if promo_stat == "UPCOMING":
             prefix_promo += " *(Inicia mañana 1 de Octubre)*"
 
         if with_checkup and price_bundle is not None and price_promo < price_bundle:
             diff_bundle = price_bundle - price_promo
-            explanation = f"{prefix_promo}: Es ${diff_bundle:,.2f} más barato que el precio adicional de paquete (${price_bundle:,.2f})."
+            explanation = f"{prefix_promo}: Es \\${diff_bundle:,.2f} más barato que el precio adicional de paquete (\\${price_bundle:,.2f})."
         else:
             diff_list = price_list - price_promo
-            explanation = f"{prefix_promo}: Ahorro de ${diff_list:,.2f} frente a lista regular (${price_list:,.2f})."
+            explanation = f"{prefix_promo}: Ahorro de \\${diff_list:,.2f} frente a lista regular (\\${price_list:,.2f})."
     elif best_rule == "ADICIONAL":
         if price_promo is not None and price_bundle < price_promo:
             diff_promo = price_promo - price_bundle
-            explanation = f"💡 **Aplica Precio Adicional (${price_bundle:,.2f})**: Al incluirse en Check-Up, es ${diff_promo:,.2f} más barato que la promo '{promo_info.get('promo_name')}' (${price_promo:,.2f})."
+            explanation = f"💡 **Aplica Precio Adicional (\\${price_bundle:,.2f})**: Al incluirse en Check-Up, es \\${diff_promo:,.2f} más barato que la promo '{promo_info.get('promo_name')}' (\\${price_promo:,.2f})."
         else:
             diff_list = price_list - price_bundle
-            explanation = f"💡 **Aplica Precio Adicional (${price_bundle:,.2f})**: Descuento especial de Check-Up (Ahorro de ${diff_list:,.2f} frente a lista regular)."
+            explanation = f"💡 **Aplica Precio Adicional (\\${price_bundle:,.2f})**: Descuento especial de Check-Up (Ahorro de \\${diff_list:,.2f} frente a lista regular)."
     else:
-        explanation = f"📋 **Precio de Lista Regular (${price_list:,.2f})**"
+        explanation = f"📋 **Precio de Lista Regular (\\${price_list:,.2f})**"
         if not with_checkup and price_bundle is not None:
-            explanation += f" *(Disponible a ${price_bundle:,.2f} si el paciente lo añade a un Check-Up)*."
+            explanation += f" *(Disponible a \\${price_bundle:,.2f} si el paciente lo añade a un Check-Up)*."
 
     savings_mxn = round(price_list - best_price, 2)
     savings_pct = round((savings_mxn / price_list) * 100, 1) if price_list > 0 else 0.0
