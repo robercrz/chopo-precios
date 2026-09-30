@@ -3,7 +3,7 @@ chcp 65001 >nul 2>&1
 title Chopo Merida - Actualizar y Publicar en la Nube
 
 cd /d "%~dp0"
-if exist "%LOCALAPPDATA%\Programs\Git\cmd\git.exe" set "PATH=%LOCALAPPDATA%\Programs\Git\cmd;%PATH%"
+if exist "%LOCALAPPDATA%\Programs\Git\cmd\git.exe" set "PATH=%LOCALAPPDATA%\Programs\Git\cmd;%LOCALAPPDATA%\Programs\Git\mingw64\bin;%PATH%"
 
 echo ===================================================================
 echo   SINCRONIZADOR AUTOMATICO DE PRECIOS - CHOPO MERIDA
