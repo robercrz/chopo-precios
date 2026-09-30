@@ -519,24 +519,98 @@ def render_catalog_tab(prices: list, filters: dict):
                 use_container_width=True
             )
 
+    # ── Filtros Avanzados Desplegables ─────────────────────────────────────────
+    with st.expander("⚙️ Filtros Avanzados (Especialidad, Rango de Precio, Promociones)", expanded=False):
+        c_adv1, c_adv2, c_adv3 = st.columns([3, 3, 2])
+
+        # 1. Especialidad médica con conteos reales
+        cat_counts = df_all_catalog["category"].value_counts().to_dict() if "category" in df_all_catalog.columns else {}
+        sorted_cats = [c for c, _ in sorted(cat_counts.items(), key=lambda x: -x[1])]
+        cat_keys = ["Todas"] + sorted_cats
+
+        def _cat_label(c):
+            if c == "Todas":
+                return f"Todas las Especialidades ({len(df_all_catalog):,})"
+            cnt = cat_counts.get(c, 0)
+            return f"{c} ({cnt:,} estudios)"
+
+        with c_adv1:
+            sel_cat_adv = st.selectbox(
+                "🏷️ Especialidad médica:",
+                options=cat_keys,
+                format_func=_cat_label,
+                key="cat_filter_adv_category",
+                help="Selecciona una especialidad médica para filtrar únicamente los estudios de esa área."
+            )
+
+        # 2. Rango de precio
+        import math
+        max_p_calc = 15000.0
+        if "price" in df_all_catalog.columns:
+            valid_p = df_all_catalog["price"].dropna()
+            if not valid_p.empty:
+                max_p_calc = float(math.ceil(valid_p.max() / 100.0) * 100.0)
+
+        with c_adv2:
+            price_slider_val = st.slider(
+                "💲 Rango de Precio (MXN):",
+                min_value=0.0,
+                max_value=max_p_calc,
+                value=(0.0, max_p_calc),
+                step=50.0,
+                format="$%.0f",
+                key="cat_filter_adv_price_range",
+            )
+
+        # 3. Solo con descuento y botón de limpiar
+        with c_adv3:
+            st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+            only_promos = st.checkbox("🏷️ Solo con descuento", key="cat_filter_adv_only_promos", help="Muestra únicamente estudios que tienen precio rebajado o promoción.")
+
+            def _cb_reset_adv():
+                st.session_state["cat_filter_adv_category"] = "Todas"
+                st.session_state["cat_filter_adv_price_range"] = (0.0, max_p_calc)
+                st.session_state["cat_filter_adv_only_promos"] = False
+
+            st.button("🔄 Restablecer Filtros", on_click=_cb_reset_adv, use_container_width=True)
+
     # ── Aplicar filtros al DataFrame ──────────────────────────────────────────
     if only_favs:
         df = df[df["study_name"].isin(fav_names)]
 
-    # Filtros del sidebar (si existen)
+    # Filtro de Especialidad (prioriza el filtro avanzado del catálogo)
+    cat_to_filter = sel_cat_adv if sel_cat_adv != "Todas" else filters.get("category")
+    if cat_to_filter and cat_to_filter != "Todas" and "category" in df.columns:
+        df = df[df["category"] == cat_to_filter]
+
+    # Filtro por rango de precio
+    if price_slider_val and (price_slider_val[0] > 0 or price_slider_val[1] < max_p_calc):
+        p_min, p_max = price_slider_val
+        mask = (df["price"].isna()) | ((df["price"] >= p_min) & (df["price"] <= p_max))
+        df = df[mask]
+    elif "price" in df.columns and (filters.get("price_min", 0) > 0 or filters.get("price_max", 100000) < 100000):
+        mask = (df["price"].isna()) | (
+            (df["price"] >= filters["price_min"]) & (df["price"] <= filters["price_max"])
+        )
+        df = df[mask]
+
+    # Filtro solo con promociones / descuento
+    if only_promos:
+        if "price_regular" in df.columns:
+            df = df[df["price_regular"].notna() & (df["price_regular"] > df["price"])]
+        elif "price_raw" in df.columns:
+            df = df[df["price_raw"].str.contains(r"%|desc|promo|rebaj", case=False, na=False)]
+
+    # Filtros del sidebar por laboratorio
     if filters.get("lab") and filters["lab"] != "Todos" and "lab_name" in df.columns:
         df = df[df["lab_name"] == filters["lab"]]
 
-    if filters.get("category") and filters["category"] != "Todas" and "category" in df.columns:
-        df = df[df["category"] == filters["category"]]
-
-    # Filtro de búsqueda (prioriza el buscador del catálogo, o el del sidebar)
+    # Filtro de búsqueda por texto
     active_search = (kw_input or "").strip()
     if not active_search and filters.get("search"):
         active_search = filters["search"].strip()
 
     if active_search:
-        # Permite buscar múltiples palabras clave (ej. "vitamina d")
         terms = active_search.split()
         for t in terms:
             df = df[
@@ -544,21 +618,18 @@ def render_catalog_tab(prices: list, filters: dict):
                 df["category"].str.contains(t, case=False, na=False)
             ]
 
-    if "price" in df.columns:
-        mask = (df["price"].isna()) | (
-            (df["price"] >= filters["price_min"]) & (df["price"] <= filters["price_max"])
-        )
-        df = df[mask]
-
     df = df.reset_index(drop=True)
 
     # ── Resumen de Resultados y Selector de Estudio ────────────────────────────
     st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
-    c_status, c_picker = st.columns([3, 4])
+    c_status, c_picker = st.columns([3.5, 3.5])
 
     with c_status:
+        spec_text = f" en **{cat_to_filter}**" if cat_to_filter and cat_to_filter != "Todas" else ""
         if active_search:
-            st.markdown(f"🔍 **{len(df):,}** estudios encontrados para **\"{active_search}\"**:")
+            st.markdown(f"🔍 **{len(df):,}** estudios para **\"{active_search}\"**{spec_text}:")
+        elif cat_to_filter and cat_to_filter != "Todas":
+            st.markdown(f"🏷️ **{cat_to_filter}:** Mostrando **{len(df):,}** estudios disponibles")
         else:
             st.markdown(f"📋 **Catálogo:** Mostrando **{len(df):,}** estudios disponibles")
 
