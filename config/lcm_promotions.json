@@ -1,0 +1,149 @@
+[
+  {
+    "id": "promo_esencial",
+    "name": "Check Up Esencial",
+    "category": "Promo Permanente",
+    "validity_type": "permanent",
+    "end_date": null,
+    "studies": [
+      "Biometría hemática",
+      "Química Sanguínea (30 elementos)",
+      "Examen general de orina"
+    ],
+    "price_regular": 750.0,
+    "price_promo": 549.0,
+    "chopo_equivalent": "CHECK UP BÁSICO QUÍMICA DE 45 ELEMENTOS",
+    "notes": "Incluye BH, QS 30 y EGO",
+    "status": "PERMANENT",
+    "status_label": "🔵 Permanente",
+    "days_left": null
+  },
+  {
+    "id": "promo_avanzado",
+    "name": "Checkup Avanzado",
+    "category": "Promo Permanente",
+    "validity_type": "permanent",
+    "end_date": null,
+    "studies": [
+      "Biometría hemática",
+      "Química Sanguínea (40 elementos)",
+      "Examen general de orina"
+    ],
+    "price_regular": 1150.0,
+    "price_promo": 890.0,
+    "chopo_equivalent": "CHECK UP SALUD QUÍMICA DE 45 ELEMENTOS",
+    "notes": "Incluye BH, QS 40 y EGO",
+    "status": "PERMANENT",
+    "status_label": "🔵 Permanente",
+    "days_left": null
+  },
+  {
+    "id": "promo_integral_plus",
+    "name": "Checkup Integral Plus",
+    "category": "Promo Permanente",
+    "validity_type": "permanent",
+    "end_date": null,
+    "studies": [
+      "Biometría hemática",
+      "Química Sanguínea de 50 elementos c/ HbA1c",
+      "Examen general de orina"
+    ],
+    "price_regular": 1450.0,
+    "price_promo": 998.0,
+    "chopo_equivalent": "CHECK UP INTEGRAL Q45",
+    "notes": "Incluye BH, QS 50 c/ Hemoglobina Glicosilada y EGO",
+    "status": "PERMANENT",
+    "status_label": "🔵 Permanente",
+    "days_left": null
+  },
+  {
+    "id": "promo_inicial",
+    "name": "Check Up Inicial",
+    "category": "Promo Permanente",
+    "validity_type": "permanent",
+    "end_date": null,
+    "studies": [
+      "Biometría hemática",
+      "Química Sanguínea (6 elementos)",
+      "Examen general de orina"
+    ],
+    "price_regular": 620.0,
+    "price_promo": 470.0,
+    "chopo_equivalent": "QUÍMICA 6 + BIOMETRÍA + EGO",
+    "notes": "Paquete básico para chequeo general",
+    "status": "PERMANENT",
+    "status_label": "🔵 Permanente",
+    "days_left": null
+  },
+  {
+    "id": "promo_tiroideo_esencial",
+    "name": "Check Up Tiroideo Esencial",
+    "category": "Promo Cuatrimestral",
+    "validity_type": "custom_date",
+    "end_date": "2026-12-31",
+    "studies": [
+      "Perfil tiroideo completo",
+      "Biometría hemática",
+      "Química Sanguínea (30 elementos)",
+      "Examen general de orina"
+    ],
+    "price_regular": 1433.0,
+    "price_promo": 1050.0,
+    "chopo_equivalent": "CHECK UP BÁSICO TIROIDEO QUÍMICA DE 45 ELEMENTOS",
+    "notes": "Perfil tiroideo completo + Check Up Esencial",
+    "days_left": 92,
+    "status": "ACTIVE",
+    "status_label": "🟢 Activa (vence 31/12/2026)"
+  },
+  {
+    "id": "promo_perfil_tiroideo",
+    "name": "Perfil Tiroideo Completo",
+    "category": "Promo del Mes",
+    "validity_type": "custom_date",
+    "end_date": "2026-09-30",
+    "studies": [
+      "Perfil tiroideo completo"
+    ],
+    "price_regular": 690.0,
+    "price_promo": 590.0,
+    "chopo_equivalent": "PERFIL TIROIDEO",
+    "notes": "Descuento especial de temporada",
+    "days_left": 0,
+    "status": "EXPIRING_SOON",
+    "status_label": "🟠 Por vencer (0 días)"
+  },
+  {
+    "id": "promo_perfil_femenino",
+    "name": "Perfil Hormonal Femenino",
+    "category": "Promo del Mes",
+    "validity_type": "custom_date",
+    "end_date": "2026-09-30",
+    "studies": [
+      "Perfil hormonal femenino"
+    ],
+    "price_regular": 1090.0,
+    "price_promo": 980.0,
+    "chopo_equivalent": "PERFIL HORMONAL",
+    "notes": "Ginecológico completo",
+    "days_left": 0,
+    "status": "EXPIRING_SOON",
+    "status_label": "🟠 Por vencer (0 días)"
+  },
+  {
+    "id": "promo_vitamina_d",
+    "name": "Vitamina D (25-OH) Total",
+    "category": "Promo Especial",
+    "validity_type": "permanent",
+    "end_date": null,
+    "studies": [
+      "Vitamina D (25-OH) total"
+    ],
+    "price_regular": 690.0,
+    "price_promo": 640.0,
+    "chopo_equivalent": "25 HIDROXI VITAMINA D TOTAL (CALCIFEROL)",
+    "notes": "Precio en paquete o adicional",
+    "status": "PERMANENT",
+    "status_label": "🔵 Permanente",
+    "days_left": null
+  }
+]
