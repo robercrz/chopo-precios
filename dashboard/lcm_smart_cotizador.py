@@ -24,7 +24,8 @@ from scraper.lcm_analytes_manager import (
     suggest_checkups_for_studies,
     get_lcm_checkups,
     get_lcm_adicionales,
-    normalize_analyte_name
+    normalize_analyte_name,
+    filter_studies_covered_by_checkup
 )
 
 
@@ -111,6 +112,13 @@ def render_smart_cotizador_tab():
         st.session_state.cotiz_selected_adicionales = []
     if "cotiz_patient_name" not in st.session_state:
         st.session_state.cotiz_patient_name = ""
+    if "cotiz_sel_version" not in st.session_state:
+        st.session_state.cotiz_sel_version = 0
+
+    # Mensaje de confirmación cuando se aplica sugerencia o limpieza
+    if st.session_state.get("cotiz_last_applied_msg"):
+        st.success(f"🎉 {st.session_state.cotiz_last_applied_msg}")
+        st.session_state.cotiz_last_applied_msg = None
 
     # ── 2. Carga Rápida de Estudios / Perfiles Frecuentes (1 Clic) ────────────
     st.markdown("##### ⚡ Carga Rápida de Perfiles Frecuentes (1 clic):")
@@ -120,36 +128,48 @@ def render_smart_cotizador_tab():
         if st.button("🦋 Tiroideo + QS", use_container_width=True, help="Química Sanguínea 27 + Perfil Tiroideo 2"):
             st.session_state.cotiz_selected_studies = ["QUÍMICA SANGUÍNEA DE 27 ELEMENTOS", "PERFIL TIROIDEO 2"]
             st.session_state.cotiz_base_checkup = None
+            st.session_state.cotiz_selected_adicionales = []
+            st.session_state.cotiz_sel_version += 1
             st.rerun()
 
     with col_q2:
-        if st.button("🩺 Check-Up Básico", use_container_width=True, help="Química 30 + BH + EGO"):
-            st.session_state.cotiz_selected_studies = ["QUÍMICA SANGUÍNEA DE 27 ELEMENTOS", "BIOMETRÍA HEMÁTICA", "EXAMEN GENERAL DE ORINA"]
+        if st.button("🩺 Check-Up Básico", use_container_width=True, help="Check Up Esencial con Química 30, BH y EGO"):
+            st.session_state.cotiz_selected_studies = []
             st.session_state.cotiz_base_checkup = "Check Up Esencial (30 Elementos)"
+            st.session_state.cotiz_selected_adicionales = []
+            st.session_state.cotiz_sel_version += 1
             st.rerun()
 
     with col_q3:
         if st.button("☀️ QS + Vitamina D", use_container_width=True, help="Química 27 + Vitamina D"):
             st.session_state.cotiz_selected_studies = ["QUÍMICA SANGUÍNEA DE 27 ELEMENTOS", "VITAMINA D (25-OH) TOTAL", "BIOMETRÍA HEMÁTICA"]
             st.session_state.cotiz_base_checkup = None
+            st.session_state.cotiz_selected_adicionales = []
+            st.session_state.cotiz_sel_version += 1
             st.rerun()
 
     with col_q4:
         if st.button("🥗 Diabético / Metab.", use_container_width=True, help="Química 27 + HbA1c + EGO"):
             st.session_state.cotiz_selected_studies = ["QUÍMICA SANGUÍNEA DE 27 ELEMENTOS", "PERFIL DIABÉTICO", "EXAMEN GENERAL DE ORINA"]
             st.session_state.cotiz_base_checkup = None
+            st.session_state.cotiz_selected_adicionales = []
+            st.session_state.cotiz_sel_version += 1
             st.rerun()
 
     with col_q5:
         if st.button("👨 Salud Hombre", use_container_width=True, help="Química 27 + PSA + BH + EGO"):
             st.session_state.cotiz_selected_studies = ["QUÍMICA SANGUÍNEA DE 27 ELEMENTOS", "ANTÍGENO PROSTÁTICO ESPECÍFICO (PSA)", "BIOMETRÍA HEMÁTICA"]
             st.session_state.cotiz_base_checkup = None
+            st.session_state.cotiz_selected_adicionales = []
+            st.session_state.cotiz_sel_version += 1
             st.rerun()
 
     with col_q6:
         if st.button("🤰 Prenatal", use_container_width=True, help="Perfil Obstétrico completo"):
             st.session_state.cotiz_selected_studies = ["PERFIL OBSTÉTRICO", "BIOMETRÍA HEMÁTICA", "EXAMEN GENERAL DE ORINA"]
             st.session_state.cotiz_base_checkup = None
+            st.session_state.cotiz_selected_adicionales = []
+            st.session_state.cotiz_sel_version += 1
             st.rerun()
 
     with col_q7:
@@ -157,27 +177,23 @@ def render_smart_cotizador_tab():
             st.session_state.cotiz_selected_studies = []
             st.session_state.cotiz_selected_adicionales = []
             st.session_state.cotiz_base_checkup = None
+            st.session_state.cotiz_sel_version += 1
             st.rerun()
 
     st.markdown("---")
 
     # ── 3. Buscador y Selector Multiestudio ────────────────────────────────────
-    # Preparar opciones ordenadas del catálogo
     all_study_options = []
-    # Primero las Químicas Sanguíneas
     for k, v in catalog.items():
         if v.get("study_type") == "QUIMICA_SANGUINEA":
             all_study_options.append(v["name"])
-    # Luego los Perfiles
     for k, v in catalog.items():
         if v.get("study_type") == "PERFIL_CLINICO":
             all_study_options.append(v["name"])
-    # Luego Paneles y otros
     for k, v in catalog.items():
         if v.get("study_type") not in ("QUIMICA_SANGUINEA", "PERFIL_CLINICO") and v["name"] not in all_study_options:
             all_study_options.append(v["name"])
 
-    # Añadir opciones comunes si no están
     common_names = [
         "VITAMINA D (25-OH) TOTAL",
         "HEMOGLOBINA GLICOSILADA (HbA1c)",
@@ -203,12 +219,12 @@ def render_smart_cotizador_tab():
             "🔍 Selecciona o escribe los estudios que el paciente solicita:",
             options=all_study_options,
             default=[s for s in st.session_state.cotiz_selected_studies if s in all_study_options],
+            key=f"cotiz_multisel_studies_{st.session_state.cotiz_sel_version}",
             help="Escribe el nombre de la química (ej. 27 elementos, 30, 45), perfil tiroideo, lípidos, etc."
         )
         st.session_state.cotiz_selected_studies = selected_studies
 
     with col_sel_chk:
-        # Selector opcional de Check-Up Base
         chk_names = ["[Ninguno - Cotizar estudios sueltos]"] + [c["name"] for c in checkups_list]
         curr_chk_idx = 0
         if st.session_state.cotiz_base_checkup:
@@ -221,12 +237,40 @@ def render_smart_cotizador_tab():
             "📦 Check-Up Base contratado (opcional):",
             options=chk_names,
             index=curr_chk_idx,
+            key=f"cotiz_chk_base_{st.session_state.cotiz_sel_version}",
             help="Al seleccionar un Check-Up base, se habilitan las tarifas preferenciales en estudios adicionales."
         )
         if sel_base_chk != "[Ninguno - Cotizar estudios sueltos]":
             st.session_state.cotiz_base_checkup = sel_base_chk
         else:
             st.session_state.cotiz_base_checkup = None
+
+    # Si hay un Check-Up base activo, verificar si en selected_studies hay estudios cubiertos por él
+    if st.session_state.cotiz_base_checkup and selected_studies:
+        act_chk = next((c for c in checkups_list if c["name"] == st.session_state.cotiz_base_checkup), None)
+        if act_chk:
+            clean_rem, clean_covered, clean_adics = filter_studies_covered_by_checkup(
+                selected_studies=selected_studies,
+                checkup=act_chk,
+                adicionales_list=adicionales_list
+            )
+            if clean_covered:
+                c_warn_col, c_btn_clean = st.columns([3, 1.2])
+                with c_warn_col:
+                    st.warning(f"⚠️ El Check-Up **'{act_chk['name']}'** ya incluye: **{', '.join(clean_covered)}**. Están repetidos en tus estudios sueltos.")
+                with c_btn_clean:
+                    st.markdown("&nbsp;", unsafe_allow_html=True)
+                    if st.button("🧹 Quitar Duplicados de la Lista", key="btn_clean_manual_dupes", use_container_width=True):
+                        st.session_state.cotiz_selected_studies = clean_rem
+                        if clean_adics:
+                            cur_ad = list(st.session_state.cotiz_selected_adicionales)
+                            for ma in clean_adics:
+                                if not any(ca.get("name") == ma.get("name") for ca in cur_ad):
+                                    cur_ad.append(ma)
+                            st.session_state.cotiz_selected_adicionales = cur_ad
+                        st.session_state.cotiz_sel_version += 1
+                        st.session_state.cotiz_last_applied_msg = f"Se removieron los estudios ya cubiertos por el Check-Up: {', '.join(clean_covered)}."
+                        st.rerun()
 
     if not selected_studies and not st.session_state.cotiz_base_checkup:
         st.info("👆 Selecciona uno o más estudios en el buscador de arriba o haz clic en alguno de los botones rápidos para generar la cotización y ver las sugerencias de Check-Up.")
@@ -266,8 +310,30 @@ def render_smart_cotizador_tab():
 
         col_apply_sug, col_sug_dummy = st.columns([2, 3])
         with col_apply_sug:
-            if st.button(f"⚡ Aplicar '{chk_sug['name']}' como Base de la Cotización", type="primary", use_container_width=True, key=f"btn_apply_{chk_sug['id']}"):
+            if st.button(f"⚡ Aplicar '{chk_sug['name']}' y Sustituir Duplicados", type="primary", use_container_width=True, key=f"btn_apply_{chk_sug['id']}"):
+                rem_studies, removed_studies, moved_adics = filter_studies_covered_by_checkup(
+                    selected_studies=st.session_state.cotiz_selected_studies,
+                    checkup=chk_sug,
+                    adicionales_list=adicionales_list
+                )
                 st.session_state.cotiz_base_checkup = chk_sug["name"]
+                st.session_state.cotiz_selected_studies = rem_studies
+
+                # Si se detectaron estudios adicionales (ej. Vitamina D), pasarlos a adicionales
+                if moved_adics:
+                    current_adics = list(st.session_state.cotiz_selected_adicionales)
+                    for ma in moved_adics:
+                        if not any(ca.get("name") == ma.get("name") for ca in current_adics):
+                            current_adics.append(ma)
+                    st.session_state.cotiz_selected_adicionales = current_adics
+
+                st.session_state.cotiz_sel_version += 1
+                msg_parts = [f"Check-Up '{chk_sug['name']}' aplicado."]
+                if removed_studies:
+                    msg_parts.append(f"Se sustituyeron de la lista {len(removed_studies)} estudios duplicados: {', '.join(removed_studies)}.")
+                if moved_adics:
+                    msg_parts.append(f"Se movieron a adicionales en promoción: {', '.join([m['name'] for m in moved_adics])}.")
+                st.session_state.cotiz_last_applied_msg = " ".join(msg_parts)
                 st.rerun()
 
     # ── 5. Detección y Alerta de Analitos Duplicados / Solapados ───────────────

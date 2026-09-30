@@ -373,3 +373,106 @@ def get_lcm_adicionales() -> List[Dict[str, Any]]:
         {"code": "1412", "name": "Ácido fólico", "price_2025": 490.0, "price_bundle": 350.0, "savings": 140.0},
         {"code": "1413", "name": "Vitamina B12", "price_2025": 490.0, "price_bundle": 350.0, "savings": 140.0}
     ]
+
+
+def is_study_covered_by_checkup(study_name: str, checkup: Dict[str, Any]) -> bool:
+    """
+    Determina si un estudio clínico individual ya está incluido o sustituido
+    clínicamente dentro de un Check-Up empaquetado.
+    """
+    norm_s = normalize_analyte_name(study_name)
+    chk_studies = [normalize_analyte_name(s) for s in checkup.get("studies", [])]
+
+    # 1. Químicas sanguíneas (3, 4, 6, 12, 18, 24, 27, 30, 36, 45, 50 elementos)
+    if "QUIMICA" in norm_s or "ELEMENTOS" in norm_s:
+        if any("QUIMICA" in cs for cs in chk_studies):
+            return True
+
+    # 2. Perfil tiroideo (TSH, T3, T4, Tiroideo 2, 3, Completo)
+    if "TIROID" in norm_s or any(k in norm_s for k in ["TSH", "T3", "T4"]):
+        if any("TIROID" in cs for cs in chk_studies):
+            return True
+
+    # 3. Biometría hemática
+    if "BIOMETR" in norm_s or "HEMATIC" in norm_s:
+        if any("BIOMETR" in cs or "HEMATIC" in cs for cs in chk_studies):
+            return True
+
+    # 4. Examen General de Orina / EGO
+    if "ORINA" in norm_s or "EGO" in norm_s:
+        if any("ORINA" in cs or "EGO" in cs for cs in chk_studies):
+            return True
+
+    # 5. Vitamina D
+    if "VITAMINA D" in norm_s or "CALCIFEROL" in norm_s or "25-OH" in norm_s:
+        if any("VITAMINA D" in cs or "CALCIFEROL" in cs for cs in chk_studies):
+            return True
+
+    # 6. Antígeno prostático (PSA)
+    if "PROSTAT" in norm_s or "PSA" in norm_s:
+        if any("PROSTAT" in cs or "PSA" in cs for cs in chk_studies):
+            return True
+
+    # 7. Hemoglobina glicosilada (HbA1c)
+    if "GLICOSILADA" in norm_s or "HBA1C" in norm_s:
+        if any("GLICOSILADA" in cs or "HBA1C" in cs for cs in chk_studies):
+            return True
+
+    # 8. Perfil lipídico (si el Check-Up tiene Química >= 24 o Perfil Lipídico)
+    if "LIPID" in norm_s:
+        if any("QUIMICA" in cs and any(n in cs for n in ["24", "27", "30", "36", "40", "45", "50"]) for cs in chk_studies):
+            return True
+        if any("LIPID" in cs for cs in chk_studies):
+            return True
+
+    # 9. Papanicolaou / Citología
+    if "PAPANICOLAOU" in norm_s or "CITOLOG" in norm_s:
+        if any("PAPANICOLAOU" in cs or "CITOLOG" in cs for cs in chk_studies):
+            return True
+
+    # Coincidencia directa de subcadena
+    for cs in chk_studies:
+        if norm_s in cs or cs in norm_s:
+            return True
+
+    return False
+
+
+def filter_studies_covered_by_checkup(
+    selected_studies: List[str],
+    checkup: Dict[str, Any],
+    adicionales_list: Optional[List[Dict[str, Any]]] = None
+) -> Tuple[List[str], List[str], List[Dict[str, Any]]]:
+    """
+    Separa los estudios seleccionados en:
+    1. remaining_studies: estudios no cubiertos que siguen sueltos.
+    2. removed_studies: estudios cubiertos/sustituidos por el Check-Up.
+    3. moved_to_adicionales: estudios que no estaban en el Check-Up pero son adicionales en promoción.
+    """
+    if adicionales_list is None:
+        adicionales_list = get_lcm_adicionales()
+
+    remaining_studies = []
+    removed_studies = []
+    moved_to_adicionales = []
+
+    for s in selected_studies:
+        if is_study_covered_by_checkup(s, checkup):
+            removed_studies.append(s)
+        else:
+            # Revisar si es un estudio adicional que conviene pasar a tarifa preferencial
+            norm_s = normalize_analyte_name(s)
+            found_adic = None
+            for adic in adicionales_list:
+                norm_a = normalize_analyte_name(adic.get("name", ""))
+                if norm_s in norm_a or norm_a in norm_s:
+                    found_adic = adic
+                    break
+
+            if found_adic:
+                moved_to_adicionales.append(found_adic)
+            else:
+                remaining_studies.append(s)
+
+    return remaining_studies, removed_studies, moved_to_adicionales
+
