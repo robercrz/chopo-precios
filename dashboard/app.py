@@ -168,6 +168,90 @@ st.markdown("""
         border-radius: 8px 8px 0 0;
         font-weight: 600;
     }
+    /* ── Executive Ribbon (Fusión Opción 1 & 2) ─────────────────────────── */
+    .exec-ribbon {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 8px 16px;
+        margin-top: 2px;
+        margin-bottom: 14px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+    }
+    .exec-metrics {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 16px;
+    }
+    .exec-metric {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+    }
+    .exec-icon {
+        font-size: 1.3rem;
+        line-height: 1;
+    }
+    .exec-data {
+        display: flex;
+        flex-direction: column;
+        line-height: 1.15;
+    }
+    .exec-label {
+        font-size: 0.67rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #64748b;
+    }
+    .exec-val {
+        font-size: 1.08rem;
+        font-weight: 800;
+        color: #1e293b;
+    }
+    .exec-sub {
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: #2563eb;
+        margin-left: 2px;
+    }
+    .exec-sep {
+        width: 1px;
+        height: 24px;
+        background: #e2e8f0;
+    }
+    .exec-badge-sync {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        color: #15803d;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 0.76rem;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+    .exec-dot {
+        width: 7px;
+        height: 7px;
+        background: #22c55e;
+        border-radius: 50%;
+        display: inline-block;
+        box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.25);
+    }
+    @media (max-width: 992px) {
+        .exec-sep { display: none; }
+        .exec-metrics { gap: 14px; }
+        .exec-metric { min-width: 135px; }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -478,41 +562,121 @@ def render_sidebar(labs: list, prices: list) -> dict:
     }
 
 
-# ── Métricas KPI ───────────────────────────────────────────────────────────────
+# ── Métricas KPI: Cintillo Ejecutivo (Fusión Opción 1 & Opción 2) ───────────────
+def format_sync_time(raw_dt_str: Optional[str]) -> str:
+    """Formatea la fecha ISO de scrape de manera ejecutiva y legible (ej. Hoy, 7:55 PM)."""
+    if not raw_dt_str:
+        return "Al día"
+    try:
+        dt_str = str(raw_dt_str).replace("Z", "")
+        dt_clean = dt_str.split(".")[0] if "." in dt_str else dt_str
+        dt = datetime.fromisoformat(dt_clean)
+        meses = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+        mes = meses[dt.month - 1]
+        hora_str = dt.strftime("%I:%M %p").lstrip("0")
+        now = datetime.now()
+        if dt.date() == now.date():
+            prefix = "Hoy"
+        elif dt.date() == (now - timedelta(days=1)).date():
+            prefix = "Ayer"
+        else:
+            prefix = f"{dt.day} {mes}"
+        return f"{prefix}, {hora_str}"
+    except Exception:
+        return str(raw_dt_str)[:16].replace("T", " ")
+
+
 def render_kpis(prices: list, changes: list, scrape_log: list):
-    df = pd.DataFrame(prices)
+    """Renderiza el cintillo ejecutivo compacto con métricas estratégicas de negocio."""
+    total_studies = len(prices)
+    branch = "Mérida Altabrisa"
+    if prices and prices[0].get("branch"):
+        raw_b = str(prices[0]["branch"])
+        branch = raw_b.replace("Merida", "Mérida")
 
-    col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        st.metric("📋 Total Estudios", len(prices))
-    with col2:
-        if not df.empty and "price" in df.columns:
-            avg = df["price"].mean()
-            st.metric("💲 Precio Promedio", f"${avg:,.2f}" if pd.notna(avg) else "N/D")
-        else:
-            st.metric("💲 Precio Promedio", "N/D")
-    with col3:
-        if not df.empty and "price" in df.columns:
-            mn = df["price"].min()
-            st.metric("📉 Precio Mínimo", f"${mn:,.2f}" if pd.notna(mn) else "N/D")
-        else:
-            st.metric("📉 Precio Mínimo", "N/D")
-    with col4:
-        if not df.empty and "price" in df.columns:
-            mx = df["price"].max()
-            st.metric("📈 Precio Máximo", f"${mx:,.2f}" if pd.notna(mx) else "N/D")
-        else:
-            st.metric("📈 Precio Máximo", "N/D")
-    with col5:
-        st.metric("🔔 Cambios (30d)", len(changes))
+    promo_count = 0
+    valid_prices = []
+    for p in prices:
+        pr = p.get("price")
+        if pr is not None and pd.notna(pr):
+            try:
+                valid_prices.append(float(pr))
+            except (ValueError, TypeError):
+                pass
+        reg = p.get("price_original") or p.get("price_regular")
+        if reg and pr and float(reg) > float(pr):
+            promo_count += 1
 
-    # Última actualización
-    if scrape_log:
-        last = scrape_log[0]
-        st.caption(
-            f"🕐 Última actualización: {last.get('scraped_at', 'N/D')} "
-            f"| {last.get('studies_count', 0)} estudios | {last.get('lab_name', '')} {last.get('city', '')}"
-        )
+    promo_pct = (promo_count / total_studies * 100) if total_studies else 0.0
+    avg_price = (sum(valid_prices) / len(valid_prices)) if valid_prices else 0.0
+
+    pkg_kw = ("CHECK", "PERFIL", "INTEGRAL", "PAQUETE", "PANEL")
+    packages_count = sum(
+        1 for p in prices
+        if any(k in str(p.get("study_name") or "").upper() for k in pkg_kw)
+    )
+
+    changes_count = len(changes) if changes else 0
+
+    raw_dt = None
+    if scrape_log and scrape_log[0].get("scraped_at"):
+        raw_dt = scrape_log[0]["scraped_at"]
+    elif prices and prices[0].get("scraped_at"):
+        raw_dt = prices[0]["scraped_at"]
+
+    sync_str = format_sync_time(raw_dt)
+    avg_str = f"${avg_price:,.2f}" if avg_price > 0 else "N/D"
+
+    html = f"""
+    <div class="exec-ribbon">
+        <div class="exec-metrics">
+            <div class="exec-metric">
+                <span class="exec-icon">📋</span>
+                <div class="exec-data">
+                    <span class="exec-label">Catálogo Activo</span>
+                    <span class="exec-val">{total_studies:,} <small class="exec-sub">estudios</small></span>
+                </div>
+            </div>
+            <div class="exec-sep"></div>
+            <div class="exec-metric">
+                <span class="exec-icon">🏷️</span>
+                <div class="exec-data">
+                    <span class="exec-label">Con Descuento Web</span>
+                    <span class="exec-val">{promo_count:,} <small class="exec-sub">({promo_pct:.1f}%)</small></span>
+                </div>
+            </div>
+            <div class="exec-sep"></div>
+            <div class="exec-metric">
+                <span class="exec-icon">📦</span>
+                <div class="exec-data">
+                    <span class="exec-label">Check-Ups & Paquetes</span>
+                    <span class="exec-val">{packages_count:,} <small class="exec-sub">perfiles</small></span>
+                </div>
+            </div>
+            <div class="exec-sep"></div>
+            <div class="exec-metric">
+                <span class="exec-icon">💲</span>
+                <div class="exec-data">
+                    <span class="exec-label">Precio Promedio</span>
+                    <span class="exec-val">{avg_str} <small class="exec-sub">MXN</small></span>
+                </div>
+            </div>
+            <div class="exec-sep"></div>
+            <div class="exec-metric">
+                <span class="exec-icon">🔔</span>
+                <div class="exec-data">
+                    <span class="exec-label">Variaciones (30d)</span>
+                    <span class="exec-val">{changes_count} <small class="exec-sub">alertas</small></span>
+                </div>
+            </div>
+        </div>
+        <div class="exec-badge-sync" title="Sucursal oficial y fecha de sincronización">
+            <span class="exec-dot"></span>
+            <span>{branch} · {sync_str}</span>
+        </div>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
 
 
 # ── Tab 1: Catálogo de Precios ─────────────────────────────────────────────────
@@ -2570,7 +2734,6 @@ def main():
     filters = render_sidebar(labs, prices)
 
     render_kpis(prices, changes, scrape_log)
-    st.markdown("---")
 
     is_admin = st.session_state.get("is_admin", False)
 
