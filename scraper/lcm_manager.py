@@ -269,7 +269,16 @@ def get_available_periods() -> List[str]:
         "Cuatrimestre Sep - Dic 2026",
         "Permanentes",
         "Septiembre 2026",
-        "Agosto 2026"
+        "Agosto 2026",
+        "Julio 2026",
+        "Junio 2026",
+        "Mayo 2026",
+        "Cuatrimestre 2 (May - Ago 2026)",
+        "Abril 2026",
+        "Marzo 2026",
+        "Febrero 2026",
+        "Enero 2026",
+        "Cuatrimestre 1 (Ene - Abr 2026)"
     ]
     ordered = [p for p in priority if p in periods] + [p for p in periods if p not in priority]
     return ordered

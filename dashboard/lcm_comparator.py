@@ -365,8 +365,17 @@ def render_lcm_comparator_tab(chopo_prices: list):
                 "🍁 Octubre 2026 (Mensual - Inicia Mañana)",
                 "🍂 Cuatrimestre Sep - Dic 2026 (Vence 31 Dic)",
                 "♾️ Permanentes (Sin Caducidad)",
-                "📜 Histórico: Septiembre 2026 (Mes Patrio)",
-                "📜 Histórico: Agosto 2026 (Regreso a Clases)",
+                "📜 Septiembre 2026",
+                "📜 Agosto 2026",
+                "📜 Julio 2026",
+                "📜 Junio 2026 (Día del Padre)",
+                "📜 Mayo 2026 (Día de las Madres)",
+                "📜 Cuatrimestre 2 (May - Ago 2026)",
+                "📜 Abril 2026 (Día del Niño)",
+                "📜 Marzo 2026 (Día de la Mujer)",
+                "📜 Febrero 2026",
+                "📜 Enero 2026",
+                "📜 Cuatrimestre 1 (Ene - Abr 2026)",
                 "🗂️ Ver Todo el Histórico de Períodos Anteriores"
             ]
             sel_period = st.selectbox("📅 Seleccionar Campaña / Período a consultar:", period_options, index=0)
@@ -376,29 +385,36 @@ def render_lcm_comparator_tab(chopo_prices: list):
             sel_stat = st.selectbox("Filtro por estatus:", status_opts, index=0)
 
         # Banner informativo cuando se consulta el histórico
-        if "Histórico" in sel_period or "Septiembre" in sel_period or "Agosto" in sel_period:
-            st.info(f"📜 **Vista de Registro Histórico Activa**: Consultando las tarifas del período **{sel_period}**. Este registro permite comparar cómo han variado los precios promocionales de LCM frente a las tarifas actuales.")
+        if "Histórico" in sel_period or sel_period.startswith("📜"):
+            st.info(f"📜 **Vista de Registro Histórico Activa**: Consultando las promociones y paquetes del período **{sel_period}**. Este registro permite auditar las tarifas pasadas de LCM y compararlas con las tarifas actuales.")
 
         # Filtrar promociones
         filtered_promos = []
         for p in promotions:
             st_code = p.get("status", "ACTIVE")
-            p_period = p.get("period", "")
+            p_period = str(p.get("period", ""))
             is_arch = p.get("is_archived", False)
 
             # Filtro por período
-            if sel_period == "🍁 Octubre 2026 (Mensual - Inicia Mañana)" and p_period != "Octubre 2026":
-                continue
-            elif sel_period == "🍂 Cuatrimestre Sep - Dic 2026 (Vence 31 Dic)" and p_period != "Cuatrimestre Sep - Dic 2026":
-                continue
-            elif sel_period == "♾️ Permanentes (Sin Caducidad)" and p_period != "Permanentes":
-                continue
-            elif sel_period == "📜 Histórico: Septiembre 2026 (Mes Patrio)" and p_period != "Septiembre 2026":
-                continue
-            elif sel_period == "📜 Histórico: Agosto 2026 (Regreso a Clases)" and p_period != "Agosto 2026":
-                continue
-            elif sel_period == "🗂️ Ver Todo el Histórico de Períodos Anteriores" and not (is_arch or st_code in ("EXPIRED", "ARCHIVED")):
-                continue
+            if sel_period.startswith("🌟"):
+                pass
+            elif sel_period == "🍁 Octubre 2026 (Mensual - Inicia Mañana)":
+                if p_period != "Octubre 2026":
+                    continue
+            elif sel_period == "🍂 Cuatrimestre Sep - Dic 2026 (Vence 31 Dic)":
+                if p_period != "Cuatrimestre Sep - Dic 2026":
+                    continue
+            elif sel_period == "♾️ Permanentes (Sin Caducidad)":
+                if p_period != "Permanentes":
+                    continue
+            elif sel_period == "🗂️ Ver Todo el Histórico de Períodos Anteriores":
+                if not (is_arch or st_code in ("EXPIRED", "ARCHIVED")):
+                    continue
+            else:
+                # Extraer nombre limpio del periodo
+                clean_target = sel_period.replace("📜", "").split("(")[0].strip().lower()
+                if clean_target not in p_period.lower() and p_period.lower() not in clean_target:
+                    continue
 
             # Filtro por estatus
             if sel_stat == "🟢 Solo Vigentes Hoy" and st_code not in ("ACTIVE", "PERMANENT"):
@@ -669,12 +685,17 @@ def render_lcm_comparator_tab(chopo_prices: list):
                 [
                     "🍁 Octubre 2026 + Cuatrimestrales + Permanentes (Inician mañana - RECOMENDADO)",
                     "🟢 Solo promociones estrictamente vigentes hoy",
-                    "📜 Simular con tarifas históricas de Septiembre 2026",
+                    "📜 Simular con tarifas de Septiembre 2026",
+                    "📜 Simular con tarifas de Agosto 2026",
+                    "📜 Simular con tarifas de Julio 2026",
+                    "📜 Simular con tarifas de Junio 2026 (Día del Padre)",
+                    "📜 Simular con tarifas de Mayo 2026 (Día de las Madres)",
+                    "📜 Simular con tarifas de Enero 2026",
                     "📋 Solo precios regulares de catálogo (Sin promociones)"
                 ]
             )
         with qc2:
-            st.caption("💡 *Tip comercial:* Cotiza ya con las tarifas de Octubre para pacientes que acudan mañana o programen su cita.")
+            st.caption("💡 *Tip comercial:* Puedes cotizar ya con las tarifas de Octubre o simular cómo cotizaba en cualquier mes del año 2026.")
 
         inc_upcoming = True
         target_per = None
@@ -686,7 +707,10 @@ def render_lcm_comparator_tab(chopo_prices: list):
             target_per = None
         elif cotiz_mode.startswith("📜"):
             inc_upcoming = False
-            target_per = "Septiembre 2026"
+            for m_name in ["Septiembre", "Agosto", "Julio", "Junio", "Mayo", "Abril", "Marzo", "Febrero", "Enero"]:
+                if m_name in cotiz_mode:
+                    target_per = f"{m_name} 2026"
+                    break
         elif cotiz_mode.startswith("📋"):
             inc_upcoming = False
             target_per = "NINGUNO"
