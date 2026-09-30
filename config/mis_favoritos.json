@@ -1,1 +1,42 @@
-[]
+[
+  {
+    "study_name": "BIOMETRÍA HEMÁTICA",
+    "lab_key": "chopo_yucatan",
+    "branch": "Chopo Mérida Altabrisa",
+    "note": "Estudio básico de rutina para conteo globular",
+    "created_at": "2026-09-30",
+    "alert_threshold": null
+  },
+  {
+    "study_name": "PERFIL HORMONAL",
+    "lab_key": "chopo_yucatan",
+    "branch": "Chopo Mérida Altabrisa",
+    "note": "Monitoreo ginecológico y endocrino (Aplica promo/adicional en LCM)",
+    "created_at": "2026-09-30",
+    "alert_threshold": null
+  },
+  {
+    "study_name": "PERFIL TIROIDEO 2",
+    "lab_key": "chopo_yucatan",
+    "branch": "Chopo Mérida Altabrisa",
+    "note": "Campaña mensual tiroidea LCM",
+    "created_at": "2026-09-30",
+    "alert_threshold": null
+  },
+  {
+    "study_name": "25 HIDROXI VITAMINA D TOTAL (CALCIFEROL)",
+    "lab_key": "chopo_yucatan",
+    "branch": "Chopo Mérida Altabrisa",
+    "note": "Tarifa especial LCM como adicional a Check-Up ($640 vs Chopo $748)",
+    "created_at": "2026-09-30",
+    "alert_threshold": null
+  },
+  {
+    "study_name": "EXAMEN GENERAL DE ORINA",
+    "lab_key": "chopo_yucatan",
+    "branch": "Chopo Mérida Altabrisa",
+    "note": "Urianálisis básico",
+    "created_at": "2026-09-30",
+    "alert_threshold": null
+  }
+]

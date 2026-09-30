@@ -66,14 +66,15 @@ from scraper.lcm_manager import (
 
 
 # ── Manejador de Favoritos (Persistencia Robusta: JSON + SQLite + Gist) ────────
-def get_user_favorite_names(cm=None) -> set:
+def get_user_favorite_names(cm=None, force_reload: bool = False) -> set:
     """Obtiene los nombres de favoritos del usuario desde la sesión con respaldo persistente."""
-    if "user_favorites_set" in st.session_state and st.session_state["user_favorites_set"] is not None:
+    if not force_reload and "user_favorites_set" in st.session_state and st.session_state["user_favorites_set"]:
         return st.session_state["user_favorites_set"]
 
     favs = get_favorite_study_names()
     st.session_state["user_favorites_set"] = favs
     return favs
+
 
 
 def add_user_fav(study_name: str, lab_key: str = "chopo_yucatan", branch: str = None, cm=None):
@@ -1417,7 +1418,7 @@ def render_favorites_tab(prices: list, **kwargs):
         st.markdown("### ⭐ Mis Estudios Favoritos · Inteligencia Dual Chopo vs LCM")
         st.caption("🔬 Monitoreo clínico y comparativa directa en tiempo real entre Chopo Mérida y Laboratorios Clínicos de Mérida (LCM).")
     with c_fav_export:
-        c_dl, c_xl, c_up = st.columns([1, 1.2, 1])
+        c_dl, c_xl, c_reload, c_up = st.columns([1, 1.2, 1, 1])
         with c_dl:
             if user_fav_names:
                 st.download_button(
@@ -1473,6 +1474,10 @@ def render_favorites_tab(prices: list, **kwargs):
                         mime="text/csv",
                         use_container_width=True
                     )
+        with c_reload:
+            if st.button("🔄 Recargar", key="btn_reload_favs", help="Fuerza la recarga de tus favoritos desde el archivo de configuración"):
+                st.session_state["user_favorites_set"] = None
+                st.rerun()
         with c_up:
             st.checkbox("📥 Restaurar", key="toggle_fav_importer", help="Importar favoritos desde archivo JSON")
 
@@ -1489,11 +1494,22 @@ def render_favorites_tab(prices: list, **kwargs):
 
     if not fav_items:
         st.info(
-            "💡 **Aún no tienes estudios agregados a favoritos.**  \n"
-            "Puedes marcar estudios como favoritos con un clic en la estrella ⭐ desde:  \n"
-            "1. La pestaña **⚖️ Comparativa LCM vs Chopo** (en el Buscador Cara a Cara o en la Matriz).  \n"
-            "2. La pestaña **📋 Catálogo Chopo** en cualquiera de los estudios listados."
+            "💡 **Actualmente no tienes estudios agregados en tu lista de favoritos.**  \n"
+            "Puedes marcar cualquier estudio con la estrella ⭐ desde la pestaña **⚖️ Comparativa LCM vs Chopo** o desde el **📋 Catálogo**."
         )
+        if st.button("⭐ Cargar Estudios Sugeridos de Monitoreo (Check-Ups, Perfil Hormonal, Vitamina D, etc.)", type="primary"):
+            from scraper.favorites_manager import save_all_favorites
+            defaults = [
+                {"study_name": "BIOMETRÍA HEMÁTICA", "lab_key": "chopo_yucatan", "branch": "Chopo Mérida Altabrisa", "note": "Rutina"},
+                {"study_name": "PERFIL HORMONAL", "lab_key": "chopo_yucatan", "branch": "Chopo Mérida Altabrisa", "note": "Endocrino"},
+                {"study_name": "PERFIL TIROIDEO 2", "lab_key": "chopo_yucatan", "branch": "Chopo Mérida Altabrisa", "note": "Campaña mensual LCM"},
+                {"study_name": "25 HIDROXI VITAMINA D TOTAL (CALCIFEROL)", "lab_key": "chopo_yucatan", "branch": "Chopo Mérida Altabrisa", "note": "Adicional LCM"},
+                {"study_name": "EXAMEN GENERAL DE ORINA", "lab_key": "chopo_yucatan", "branch": "Chopo Mérida Altabrisa", "note": "General"}
+            ]
+            save_all_favorites(defaults)
+            st.session_state["user_favorites_set"] = {d["study_name"] for d in defaults}
+            st.success("✅ Estudios sugeridos cargados en favoritos.")
+            st.rerun()
         return
 
     # ── Métricas Rápidas & Análisis de Inteligencia Competitiva ────────────────
