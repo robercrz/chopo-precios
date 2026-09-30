@@ -552,21 +552,15 @@ def render_catalog_tab(prices: list, filters: dict):
 
     df = df.reset_index(drop=True)
 
-    # ── Resumen de Resultados y Selector de Autocompletado Opcional ────────────
-    st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+    # ── Resumen de Resultados y Selector de Estudio ────────────────────────────
+    st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
     c_status, c_picker = st.columns([3, 4])
 
     with c_status:
         if active_search:
-            st.markdown(f"🔍 Mostrando **{len(df)}** estudios que contienen **\"{active_search}\"**:")
+            st.markdown(f"🔍 **{len(df):,}** estudios encontrados para **\"{active_search}\"**:")
         else:
-            cat_counts = df["category"].value_counts().to_dict() if "category" in df.columns else {}
-            badge_html = " ".join(
-                f'<span style="background:#1a5276;color:white;padding:2px 8px;border-radius:10px;font-size:0.75rem;margin:2px">'
-                f'{cat} ({cnt})</span>'
-                for cat, cnt in sorted(cat_counts.items(), key=lambda x: -x[1])[:6]
-            )
-            st.markdown(f"Mostrando **{len(df)}** estudios &nbsp;|&nbsp; {badge_html}", unsafe_allow_html=True)
+            st.markdown(f"📋 **Catálogo:** Mostrando **{len(df):,}** estudios disponibles")
 
     with c_picker:
         # Selector de autocompletado con las opciones disponibles actualmente
@@ -579,7 +573,7 @@ def render_catalog_tab(prices: list, filters: dict):
 
             st.selectbox(
                 "🎯 Seleccionar un estudio específico:",
-                options=["-- Elige o escribe un estudio de la lista para ver su detalle --"] + avail_options,
+                options=["-- O elige un estudio específico de la lista --"] + avail_options,
                 index=default_idx if default_idx <= len(avail_options) else 0,
                 key="cat_study_picker_dropdown",
                 on_change=_cb_on_picker_change,
