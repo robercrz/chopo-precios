@@ -12,7 +12,7 @@ import io
 import json
 import re
 from datetime import datetime
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 
 import streamlit as st
 import pandas as pd
@@ -24,9 +24,64 @@ from scraper.lcm_analytes_manager import (
     suggest_checkups_for_studies,
     get_lcm_checkups,
     get_lcm_adicionales,
-    normalize_analyte_name,
-    filter_studies_covered_by_checkup
+    normalize_analyte_name
 )
+
+try:
+    from scraper.lcm_analytes_manager import filter_studies_covered_by_checkup, is_study_covered_by_checkup
+except ImportError:
+    def is_study_covered_by_checkup(study_name: str, checkup: Dict[str, Any]) -> bool:
+        norm_s = normalize_analyte_name(study_name)
+        chk_studies = [normalize_analyte_name(s) for s in checkup.get("studies", [])]
+        if "QUIMICA" in norm_s or "ELEMENTOS" in norm_s:
+            if any("QUIMICA" in cs for cs in chk_studies): return True
+        if "TIROID" in norm_s or any(k in norm_s for k in ["TSH", "T3", "T4"]):
+            if any("TIROID" in cs for cs in chk_studies): return True
+        if "BIOMETR" in norm_s or "HEMATIC" in norm_s:
+            if any("BIOMETR" in cs or "HEMATIC" in cs for cs in chk_studies): return True
+        if "ORINA" in norm_s or "EGO" in norm_s:
+            if any("ORINA" in cs or "EGO" in cs for cs in chk_studies): return True
+        if "VITAMINA D" in norm_s or "CALCIFEROL" in norm_s or "25-OH" in norm_s:
+            if any("VITAMINA D" in cs or "CALCIFEROL" in cs for cs in chk_studies): return True
+        if "PROSTAT" in norm_s or "PSA" in norm_s:
+            if any("PROSTAT" in cs or "PSA" in cs for cs in chk_studies): return True
+        if "GLICOSILADA" in norm_s or "HBA1C" in norm_s:
+            if any("GLICOSILADA" in cs or "HBA1C" in cs for cs in chk_studies): return True
+        if "LIPID" in norm_s:
+            if any("QUIMICA" in cs and any(n in cs for n in ["24", "27", "30", "36", "40", "45", "50"]) for cs in chk_studies): return True
+            if any("LIPID" in cs for cs in chk_studies): return True
+        if "PAPANICOLAOU" in norm_s or "CITOLOG" in norm_s:
+            if any("PAPANICOLAOU" in cs or "CITOLOG" in cs for cs in chk_studies): return True
+        for cs in chk_studies:
+            if norm_s in cs or cs in norm_s: return True
+        return False
+
+    def filter_studies_covered_by_checkup(
+        selected_studies: List[str],
+        checkup: Dict[str, Any],
+        adicionales_list: Optional[List[Dict[str, Any]]] = None
+    ) -> Tuple[List[str], List[str], List[Dict[str, Any]]]:
+        if adicionales_list is None:
+            adicionales_list = get_lcm_adicionales()
+        remaining_studies = []
+        removed_studies = []
+        moved_to_adicionales = []
+        for s in selected_studies:
+            if is_study_covered_by_checkup(s, checkup):
+                removed_studies.append(s)
+            else:
+                norm_s = normalize_analyte_name(s)
+                found_adic = None
+                for adic in adicionales_list:
+                    norm_a = normalize_analyte_name(adic.get("name", ""))
+                    if norm_s in norm_a or norm_a in norm_s:
+                        found_adic = adic
+                        break
+                if found_adic:
+                    moved_to_adicionales.append(found_adic)
+                else:
+                    remaining_studies.append(s)
+        return remaining_studies, removed_studies, moved_to_adicionales
 
 
 def _fmt_price_html(val: Any) -> str:
