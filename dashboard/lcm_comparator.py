@@ -66,6 +66,22 @@ def format_currency_html(val: Any, default: str = "N/D") -> str:
     return res.replace("$", "&#36;")
 
 
+def clean_html(raw_html: str) -> str:
+    """Elimina sangrías y líneas vacías que causan bloques de código Markdown."""
+    lines = [line.strip() for line in str(raw_html).splitlines() if line.strip()]
+    return "\n".join(lines)
+
+
+def clean_explanation(text: str) -> str:
+    """Sanitiza el texto explicativo para incrustar dentro de HTML."""
+    t = re.sub(r'\\+\$', '$', str(text or ""))
+    t = t.replace("**", "").replace("*", "")
+    t = t.replace("$", "&#36;")
+    return t.strip()
+
+
+
+
 
 def format_pct(val: Any) -> str:
     if val is None or pd.isna(val) or str(val).strip() in ("", "None", "nan", "N/D", "N/A"):
@@ -270,8 +286,9 @@ def render_lcm_comparator_tab(chopo_prices: list):
                 if best_calc["has_bundle_price"] or best_calc["has_promo_price"]:
                     p_bundle_str = f"&#36;{best_calc['price_bundle']:,.2f}" if best_calc["has_bundle_price"] else "N/A"
                     p_promo_str = f"&#36;{best_calc['price_promo']:,.2f}" if best_calc["has_promo_price"] else "N/A"
-                    expl_clean = str(best_calc.get("explanation", "")).replace("$", "&#36;")
+                    expl_clean = clean_explanation(best_calc.get("explanation", ""))
                     extra_rates_html = f"""
+
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:8px;">
                         <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:6px 10px;">
                             <span style="font-size:0.7rem; color:#64748b; font-weight:700; display:block;">En Check-Up (Adicional)</span>
@@ -294,7 +311,7 @@ def render_lcm_comparator_tab(chopo_prices: list):
                     </div>
                     """
 
-                st.markdown(f"""
+                st.markdown(clean_html(f"""
                 <div style="background:#f8fafc; border:2px solid #0284c7; border-radius:12px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,0.05);">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
                         <span style="background:#e0f2fe; color:#0369a1; font-weight:700; font-size:0.8rem; padding:4px 10px; border-radius:12px;">
@@ -314,7 +331,7 @@ def render_lcm_comparator_tab(chopo_prices: list):
                     {extra_rates_html}
                     {mod_notice}
                 </div>
-                """, unsafe_allow_html=True)
+                """), unsafe_allow_html=True)
 
 
             with col_vs:
@@ -324,7 +341,7 @@ def render_lcm_comparator_tab(chopo_prices: list):
                 if item.get("match_type") != "NO_MATCH" and item.get("chopo_name"):
                     c_web = item.get("chopo_price_web")
                     c_list = item.get("chopo_price_list")
-                    st.markdown(f"""
+                    st.markdown(clean_html(f"""
                     <div style="background:#f8fafc; border:2px solid #64748b; border-radius:12px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,0.05);">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
                             <span style="background:#f1f5f9; color:#334155; font-weight:700; font-size:0.8rem; padding:4px 10px; border-radius:12px;">
@@ -350,9 +367,9 @@ def render_lcm_comparator_tab(chopo_prices: list):
                             </div>
                         </div>
                     </div>
-                    """, unsafe_allow_html=True)
+                    """), unsafe_allow_html=True)
                 else:
-                    st.markdown("""
+                    st.markdown(clean_html("""
                     <div style="background:#fef2f2; border:2px dashed #f87171; border-radius:12px; padding:25px; text-align:center; height:100%;">
                         <div style="font-size:2rem; margin-bottom:8px;">🔎</div>
                         <h4 style="color:#991b1b; margin:0 0 6px 0;">Sin Homólogo Directo en Chopo</h4>
@@ -360,7 +377,7 @@ def render_lcm_comparator_tab(chopo_prices: list):
                             Este estudio es exclusivo de la oferta de LCM o está registrado bajo una prueba compuesta no catalogada individualmente en Chopo Mérida.
                         </p>
                     </div>
-                    """, unsafe_allow_html=True)
+                    """), unsafe_allow_html=True)
 
             # Veredicto y análisis de brecha
             if item.get("match_type") != "NO_MATCH" and item.get("diff_mxn") is not None:
@@ -368,25 +385,26 @@ def render_lcm_comparator_tab(chopo_prices: list):
                 diff_pct = item.get("diff_pct", 0)
                 st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
                 if diff_val < 0:
-                    st.markdown(f"""
+                    st.markdown(clean_html(f"""
                     <div style="background:#f0fdf4; border:1px solid #86efac; border-radius:10px; padding:12px 16px; color:#166534; font-size:0.88rem;">
                         <span style="font-weight:800; font-size:0.95rem;">🎉 Veredicto Comercial: LCM es más económico</span><br/>
                         El paciente ahorra <b>&#36;{abs(diff_val):,.2f} MXN ({abs(diff_pct)}%)</b> realizándose el estudio en <b>LCM</b> en comparación con el precio de descuento web de Chopo Mérida.
                     </div>
-                    """, unsafe_allow_html=True)
+                    """), unsafe_allow_html=True)
                 elif diff_val > 0:
-                    st.markdown(f"""
+                    st.markdown(clean_html(f"""
                     <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:10px; padding:12px 16px; color:#991b1b; font-size:0.88rem;">
                         <span style="font-weight:800; font-size:0.95rem;">⚠️ Veredicto Comercial: Chopo ofrece menor precio en canal web</span><br/>
                         Chopo está posicionado <b>&#36;{diff_val:,.2f} MXN ({diff_pct}%)</b> por debajo de LCM en este estudio en su portal web.
                     </div>
-                    """, unsafe_allow_html=True)
+                    """), unsafe_allow_html=True)
                 else:
-                    st.markdown("""
+                    st.markdown(clean_html("""
                     <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px 16px; color:#334155; font-size:0.88rem;">
                         <span style="font-weight:800; font-size:0.95rem;">🤝 Veredicto Comercial: Mismo precio exacto</span> en ambos laboratorios.
                     </div>
-                    """, unsafe_allow_html=True)
+                    """), unsafe_allow_html=True)
+
 
             # ── Panel de Modificación Manual de Precio ────────────────────────
             with st.expander("✏️ ¿El precio de LCM cambió o está desfasado? Modifícalo aquí", expanded=False):

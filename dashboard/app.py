@@ -1458,6 +1458,21 @@ def _fmt_price_html(val: Any) -> str:
     return f"&#36;{p:,.2f}"
 
 
+def _clean_html_block(raw_html: str) -> str:
+    """Elimina sangrías excesivas (>=4 espacios) y líneas vacías que activan bloques de código Markdown en CommonMark."""
+    lines = [line.strip() for line in str(raw_html).splitlines() if line.strip()]
+    return "\n".join(lines)
+
+
+def _clean_explanation_for_html(text: str) -> str:
+    """Sanitiza el texto explicativo para incrustar dentro de contenedores HTML seguros sin KaTeX ni Markdown residual."""
+    t = re.sub(r'\\+\$', '$', str(text or ""))
+    t = t.replace("**", "").replace("*", "")
+    t = t.replace("$", "&#36;")
+    return t.strip()
+
+
+
 
 def render_favorites_tab(prices: list, **kwargs):
     user_fav_names = get_user_favorite_names()
@@ -1688,7 +1703,8 @@ def render_favorites_tab(prices: list, **kwargs):
         </div>
     </div>
     """
-    st.markdown(summary_strip, unsafe_allow_html=True)
+    st.markdown(_clean_html_block(summary_strip), unsafe_allow_html=True)
+
 
 
     # ── Barra de Búsqueda y Filtros Compacta ──────────────────────────────────
@@ -1845,7 +1861,7 @@ def render_favorites_tab(prices: list, **kwargs):
             best_lcm_num = _clean_price(best_calc.get("best_price"))
             diff_val = p_num - best_lcm_num
             diff_p = round((abs(diff_val) / p_num) * 100, 1) if p_num > 0 else 0
-            expl_safe = str(best_calc.get("explanation", "")).replace("$", "&#36;")
+            expl_safe = _clean_explanation_for_html(best_calc.get("explanation", ""))
 
             if diff_val > 0:
                 verdict_html = f"""
@@ -1915,7 +1931,8 @@ def render_favorites_tab(prices: list, **kwargs):
             {verdict_html}
         </div>
         """
-        st.markdown(card_html, unsafe_allow_html=True)
+        st.markdown(_clean_html_block(card_html), unsafe_allow_html=True)
+
 
         # ── Herramientas Opcionales Desplegables (Apple-style Subtle Disclosure) ──
         with st.expander(f"⚙️ Herramientas, alertas y notas: {name[:35]}", expanded=False):
