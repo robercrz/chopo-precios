@@ -1707,119 +1707,85 @@ def render_favorites_tab(prices: list, **kwargs):
         expander_title = f"⭐ {code_tag}{name}{badge_header}"
 
         with st.expander(expander_title, expanded=False):
-            col_chopo, col_vs, col_lcm = st.columns([4.4, 0.8, 4.8])
+            col_chopo, col_lcm = st.columns(2)
 
-            # ── 1. Columna Chopo ──────────────────────────────────────────────
+            # ── 1. Columna Chopo Mérida ───────────────────────────────────────
             with col_chopo:
-                st.markdown(f"""
-                <div style="background:#f8fafc; border:2px solid #64748b; border-radius:10px; padding:15px; height:100%;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                        <span style="background:#f1f5f9; color:#334155; font-weight:700; font-size:0.78rem; padding:3px 8px; border-radius:10px;">
-                            Chopo Mérida Altabrisa
+                with st.container(border=True):
+                    st.markdown("""
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                        <span style="background:#e0f2fe; color:#0369a1; font-weight:700; font-size:0.75rem; padding:3px 10px; border-radius:12px;">
+                            🏥 CHOPO MÉRIDA ALTABRISA
                         </span>
-                        <span style="color:#64748b; font-size:0.75rem; font-weight:600;">{fav.get('lab_name', 'Chopo')}</span>
+                        <span style="color:#64748b; font-size:0.75rem; font-weight:600;">Sucursal Altabrisa</span>
                     </div>
-                    <div style="font-weight:700; font-size:0.95rem; color:#0f172a; margin-bottom:10px; line-height:1.3;">
-                        {name}
-                    </div>
-                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
-                        <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:8px 10px;">
-                            <span style="font-size:0.7rem; color:#16a34a; font-weight:700; text-transform:uppercase; display:block;">Precio Web</span>
-                            <span style="font-size:1.25rem; font-weight:800; color:#16a34a;">
-                                {_fmt_price(price)}
-                            </span>
-                        </div>
-                        <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:8px 10px;">
-                            <span style="font-size:0.7rem; color:#64748b; font-weight:700; text-transform:uppercase; display:block;">Mostrador</span>
-                            <span style="font-size:1.25rem; font-weight:800; color:#475569;">
-                                {_fmt_price(price_raw)}
-                            </span>
-                        </div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+                    """, unsafe_allow_html=True)
+                    st.markdown(f"**{name}**")
 
-                if change and change != 0:
-                    delta_chg_str = f"+${change:.2f} (+{change_pct:.1f}%)" if change > 0 else f"-${abs(change):.2f} ({change_pct:.1f}%)"
-                    st.caption(f"📈 Variación reciente en Chopo: **{delta_chg_str}**".replace("$", r"\$"))
+                    c_web, c_list = st.columns(2)
+                    c_web.metric("🌐 Precio Web", _fmt_price(price))
+                    c_list.metric("🏪 Mostrador", _fmt_price(price_raw))
 
-                thr_num = _clean_price(threshold)
-                p_num = _clean_price(price)
-                if thr_num and p_num:
-                    if p_num > thr_num:
-                        st.warning(f"⚠️ El precio de Chopo (${p_num:,.2f}) supera tu umbral de alerta (${thr_num:,.2f})".replace("$", r"\$"))
-                    else:
-                        st.caption(f"✅ Precio bajo umbral de ${thr_num:,.2f}".replace("$", r"\$"))
+                    if change and change != 0:
+                        delta_chg_str = f"+${change:.2f} (+{change_pct:.1f}%)" if change > 0 else f"-${abs(change):.2f} ({change_pct:.1f}%)"
+                        st.caption(f"📈 Variación reciente: **{delta_chg_str}**".replace("$", r"\$"))
 
-            # ── 2. Divisor VS ─────────────────────────────────────────────────
-            with col_vs:
-                st.markdown("<div style='height:45px'></div><div style='text-align:center; font-size:1.2rem; font-weight:800; color:#94a3b8;'>VS</div>", unsafe_allow_html=True)
+                    thr_num = _clean_price(threshold)
+                    p_num = _clean_price(price)
+                    if thr_num and p_num:
+                        if p_num > thr_num:
+                            st.warning(f"⚠️ Precio Chopo (${p_num:,.2f}) supera tu umbral (${thr_num:,.2f})".replace("$", r"\$"))
+                        else:
+                            st.caption(f"✅ Precio bajo umbral de ${thr_num:,.2f}".replace("$", r"\$"))
 
-            # ── 3. Columna LCM ────────────────────────────────────────────────
+            # ── 2. Columna LCM ────────────────────────────────────────────────
             with col_lcm:
-                if has_lcm:
-                    lcm_code_str = fav.get("lcm_code", "N/D")
-                    lcm_name_str = fav.get("lcm_name", "N/D")
-                    mod_tag = " <span style='background:#fef3c7; color:#92400e; font-size:0.7rem; padding:2px 6px; border-radius:6px;'>✏️ Modificado</span>" if fav.get("is_manually_edited") else ""
+                with st.container(border=True):
+                    if has_lcm:
+                        lcm_code_str = fav.get("lcm_code", "N/D")
+                        lcm_name_str = fav.get("lcm_name", "N/D")
+                        mod_tag = ' · <span style="background:#fef3c7; color:#92400e; padding:2px 6px; border-radius:6px; font-size:0.7rem;">✏️ Modificado</span>' if fav.get("is_manually_edited") else ""
 
-                    extra_badge_html = ""
-                    if best_calc.get("has_promo_price") or best_calc.get("has_bundle_price"):
-                        p_promo_str = _fmt_price(best_calc.get('price_promo')) if best_calc.get("has_promo_price") else "N/A"
-                        p_bund_str = _fmt_price(best_calc.get('price_bundle')) if best_calc.get("has_bundle_price") else "N/A"
-                        extra_badge_html = f"""
-                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:8px;">
-                            <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:6px 10px;">
-                                <span style="font-size:0.68rem; color:#64748b; font-weight:700; display:block;">En Check-Up (Adicional)</span>
-                                <span style="font-size:1.1rem; font-weight:800; color:{'#0284c7' if best_calc.get('has_bundle_price') else '#94a3b8'};">{p_bund_str}</span>
-                            </div>
-                            <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:6px 10px;">
-                                <span style="font-size:0.68rem; color:#64748b; font-weight:700; display:block;">Promoción Activa/Próx</span>
-                                <span style="font-size:1.1rem; font-weight:800; color:{'#16a34a' if best_calc.get('has_promo_price') else '#94a3b8'};">{p_promo_str}</span>
-                            </div>
-                        </div>
-                        """
-
-                    st.markdown(f"""
-                    <div style="background:#f0fdf4; border:2px solid #059669; border-radius:10px; padding:15px; height:100%;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                            <span style="background:#d1fae5; color:#065f46; font-weight:700; font-size:0.78rem; padding:3px 8px; border-radius:10px;">
-                                LCM · Clave {lcm_code_str}{mod_tag}
+                        st.markdown(f"""
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                            <span style="background:#dcfce7; color:#15803d; font-weight:700; font-size:0.75rem; padding:3px 10px; border-radius:12px;">
+                                🔬 LCM · CLAVE {lcm_code_str}{mod_tag}
                             </span>
                             <span style="color:#047857; font-size:0.75rem; font-weight:600;">Laboratorios Clínicos de Mérida</span>
                         </div>
-                        <div style="font-weight:700; font-size:0.95rem; color:#0f172a; margin-bottom:10px; line-height:1.3;">
-                            {lcm_name_str}
+                        """, unsafe_allow_html=True)
+                        st.markdown(f"**{lcm_name_str}**")
+
+                        c_lcm_list, c_lcm_best = st.columns(2)
+                        c_lcm_list.metric("📋 Precio Lista", _fmt_price(lcm_p))
+                        c_lcm_best.metric("💡 Mejor Tarifa LCM", _fmt_price(best_calc.get("best_price")))
+
+                        has_p = best_calc.get("has_promo_price")
+                        has_b = best_calc.get("has_bundle_price")
+                        if has_p or has_b:
+                            c_b1, c_b2 = st.columns(2)
+                            if has_b:
+                                c_b1.metric("🩺 En Check-Up (Adicional)", _fmt_price(best_calc.get("price_bundle")))
+                            else:
+                                c_b1.metric("🩺 En Check-Up", "No aplica")
+
+                            if has_p:
+                                p_per = best_calc.get("promo_info", {}).get("period") or "Promo Activa"
+                                c_b2.metric(f"🎉 {p_per}", _fmt_price(best_calc.get("price_promo")))
+                            else:
+                                c_b2.metric("🎉 Promoción", "Sin promo activa")
+                    else:
+                        st.markdown("""
+                        <div style="text-align:center; padding:25px 10px;">
+                            <div style="font-size:2rem; margin-bottom:6px;">🔎</div>
+                            <h5 style="color:#991b1b; margin:0 0 6px 0;">Sin Homólogo Directo en LCM</h5>
+                            <p style="color:#64748b; font-size:0.82rem; margin:0;">
+                                Estudio catalogado bajo otra denominación o exclusivo de Chopo.
+                            </p>
                         </div>
-                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
-                            <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:8px 10px;">
-                                <span style="font-size:0.7rem; color:#64748b; font-weight:700; text-transform:uppercase; display:block;">Precio de Lista</span>
-                                <span style="font-size:1.25rem; font-weight:800; color:#0284c7;">
-                                    {_fmt_price(lcm_p)}
-                                </span>
-                            </div>
-                            <div style="background:#ffffff; border:1px solid #6ee7b7; border-radius:6px; padding:8px 10px;">
-                                <span style="font-size:0.7rem; color:#047857; font-weight:700; text-transform:uppercase; display:block;">💡 Mejor Tarifa LCM</span>
-                                <span style="font-size:1.25rem; font-weight:800; color:#059669;">
-                                    {_fmt_price(best_calc.get('best_price'))}
-                                </span>
-                            </div>
-                        </div>
-                        {extra_badge_html}
-                    </div>
-                    """, unsafe_allow_html=True)
-                else:
-                    st.markdown("""
-                    <div style="background:#fef2f2; border:2px dashed #f87171; border-radius:10px; padding:20px; text-align:center; height:100%;">
-                        <div style="font-size:1.6rem; margin-bottom:4px;">🔎</div>
-                        <h5 style="color:#991b1b; margin:0 0 4px 0;">Sin Homólogo Directo en LCM</h5>
-                        <p style="color:#7f1d1d; font-size:0.8rem; margin:0;">
-                            Estudio exclusivo de Chopo o catalogado bajo una denominación compuesta distinta.
-                        </p>
-                    </div>
-                    """, unsafe_allow_html=True)
+                        """, unsafe_allow_html=True)
 
             # ── Veredicto Comercial ───────────────────────────────────────────
-            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
             p_val = _clean_price(price)
             best_lcm_val = _clean_price(best_calc.get("best_price"))
             if has_lcm and p_val and best_lcm_val:
@@ -1845,16 +1811,15 @@ def render_favorites_tab(prices: list, **kwargs):
                     st.info("🤝 **Veredicto Comercial: Mismo precio exacto** en ambos laboratorios.")
 
             # ── Acciones, Notas & Modificación de Precio ──────────────────────
-            c_actions_left, c_actions_right = st.columns([1.6, 1.4])
+            c_actions_left, c_actions_right = st.columns([1.5, 1.5])
 
             with c_actions_left:
-                # Modificación rápida de precio LCM (evitando anidar expanders dentro de expanders)
                 if has_lcm and fav.get("lcm_code"):
                     with st.container(border=True):
                         show_edit_lcm = st.checkbox(
-                            f"✏️ ¿Modificar o ajustar precio de LCM ({fav['lcm_code']})?",
+                            f"✏️ ¿Modificar o ajustar precio de lista LCM ({fav['lcm_code']})?",
                             key=f"chk_edit_{fav['lcm_code']}_{name}",
-                            help="Haz clic para sobreescribir el precio de lista de LCM si ha cambiado"
+                            help="Haz clic para sobreescribir el precio de lista de LCM si ha cambiado en sucursal"
                         )
                         if show_edit_lcm:
                             st.caption(f"Actualiza el precio de `{fav['lcm_code']}` - **{fav['lcm_name']}**:")
@@ -1885,63 +1850,65 @@ def render_favorites_tab(prices: list, **kwargs):
                 try:
                     history = get_price_history(study_name=name)
                     if history and len(history) > 1:
-                        df_h = pd.DataFrame(history)
-                        df_h["scraped_at"] = pd.to_datetime(df_h["scraped_at"])
-                        df_h = df_h.sort_values("scraped_at")
-                        fig = px.line(
-                            df_h,
-                            x="scraped_at",
-                            y="price",
-                            title=f"Historial Chopo: {name[:40]}",
-                            markers=True,
-                            color_discrete_sequence=["#0284c7"],
-                        )
-                        fig.update_layout(
-                            height=200,
-                            margin=dict(t=30, b=20, l=20, r=20),
-                            xaxis_title="Fecha",
-                            yaxis_title="Precio (MXN)",
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
+                        with st.container(border=True):
+                            df_h = pd.DataFrame(history)
+                            df_h["scraped_at"] = pd.to_datetime(df_h["scraped_at"])
+                            df_h = df_h.sort_values("scraped_at")
+                            fig = px.line(
+                                df_h,
+                                x="scraped_at",
+                                y="price",
+                                title=f"Historial Chopo: {name[:35]}",
+                                markers=True,
+                                color_discrete_sequence=["#0284c7"],
+                            )
+                            fig.update_layout(
+                                height=180,
+                                margin=dict(t=25, b=15, l=15, r=15),
+                                xaxis_title=None,
+                                yaxis_title="Precio (MXN)",
+                            )
+                            st.plotly_chart(fig, use_container_width=True)
                 except Exception:
                     pass
 
             with c_actions_right:
-                # Notas personales y umbral
-                new_note = st.text_input(
-                    "Nota personal:",
-                    value=note,
-                    key=f"note_{name}",
-                    placeholder="Ej: Para paciente X, monitorear cada mes...",
-                )
-                new_threshold = st.number_input(
-                    "Alerta si precio Chopo supera ($):",
-                    value=float(threshold) if threshold else 0.0,
-                    min_value=0.0,
-                    step=10.0,
-                    key=f"thr_{name}",
-                )
-                c_save_n, c_del_f = st.columns([1.2, 1.2])
-                with c_save_n:
-                    if st.button("💾 Guardar Nota", key=f"save_{name}", use_container_width=True):
-                        update_favorite_note(
-                            name, lab_key,
-                            note=new_note or None,
-                            alert_threshold=new_threshold if new_threshold > 0 else None,
-                        )
-                        st.success("Guardado")
-                        st.rerun()
-                with c_del_f:
-                    def _cb_fav_remove_from_tab(s_name=name, l_key=lab_key, br=branch):
-                        remove_user_fav(s_name, l_key, br or None)
-
-                    st.button(
-                        "🗑️ Quitar",
-                        key=f"del_{name}",
-                        type="secondary",
-                        on_click=_cb_fav_remove_from_tab,
-                        use_container_width=True
+                with st.container(border=True):
+                    st.markdown("**⚙️ Configuración & Monitoreo Personalizado**")
+                    new_note = st.text_input(
+                        "Nota clínica / motivo:",
+                        value=note,
+                        key=f"note_{name}",
+                        placeholder="Ej: Para paciente X, monitorear cada mes...",
                     )
+                    new_threshold = st.number_input(
+                        "Alerta si precio Chopo supera ($):",
+                        value=float(threshold) if threshold else 0.0,
+                        min_value=0.0,
+                        step=10.0,
+                        key=f"thr_{name}",
+                    )
+                    c_save_n, c_del_f = st.columns([1.2, 1.2])
+                    with c_save_n:
+                        if st.button("💾 Guardar Configuración", key=f"save_{name}", use_container_width=True):
+                            update_favorite_note(
+                                name, lab_key,
+                                note=new_note or None,
+                                alert_threshold=new_threshold if new_threshold > 0 else None,
+                            )
+                            st.success("Configuración guardada")
+                            st.rerun()
+                    with c_del_f:
+                        def _cb_fav_remove_from_tab(s_name=name, l_key=lab_key, br=branch):
+                            remove_user_fav(s_name, l_key, br or None)
+
+                        st.button(
+                            "🗑️ Quitar Favorito",
+                            key=f"del_{name}",
+                            type="secondary",
+                            on_click=_cb_fav_remove_from_tab,
+                            use_container_width=True
+                        )
 
     st.markdown("---")
     st.caption(f"Mostrando {len(filtered_items)} de {total_favs} estudios favoritos monitoreados.")

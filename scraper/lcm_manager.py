@@ -714,7 +714,13 @@ def get_active_promos_lookup(
 
         studies = p.get("studies", [])
         p_name = p.get("name", "")
-        all_targets = list(studies) + [p_name]
+        # Si la promo incluye múltiples estudios (Check-Up o paquete), el precio
+        # es por el paquete completo, no por cada estudio individual por separado.
+        if len(studies) <= 1:
+            all_targets = list(studies) + [p_name]
+        else:
+            all_targets = [p_name]
+
         for t in all_targets:
             norm_t = clean_medical_text(t)
             if not norm_t:
