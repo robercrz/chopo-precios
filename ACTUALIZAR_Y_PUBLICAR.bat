@@ -1,12 +1,11 @@
-@echo off
+﻿@echo off
 chcp 65001 >nul 2>&1
-title ⚡ Chopo Mérida - Actualizar y Publicar en la Nube
-color 0B
+title Chopo Merida - Actualizar y Publicar en la Nube
 
-cd /d "C:\Users\rober\Documents\proyeto test 1\chopo_scraper"
+cd /d "%~dp0"
 
 echo ===================================================================
-echo   ⚡ SINCRONIZADOR AUTOMATICO DE PRECIOS - CHOPO MERIDA
+echo   SINCRONIZADOR AUTOMATICO DE PRECIOS - CHOPO MERIDA
 echo ===================================================================
 echo   Este proceso hara todo de forma automatica en 3 pasos:
 echo.
@@ -64,14 +63,14 @@ git push origin main
 if %errorlevel% equ 0 (
     echo.
     echo ===================================================================
-    echo   ✨ ¡EXITO TOTAL! BASE DE DATOS ACTUALIZADA Y PUBLICADA
+    echo   EXITO TOTAL: BASE DE DATOS ACTUALIZADA Y PUBLICADA
     echo ===================================================================
     echo   1. Los precios locales han sido guardados.
     echo   2. El repositorio en GitHub fue actualizado.
-    echo   3. En ~30 segundos, tu dashboard publico en la nube reflejara
+    echo   3. En aproximadamente 30 segundos, tu dashboard publico en la nube reflejara
     echo      los nuevos precios para todos tus usuarios y colegas:
     echo.
-    echo      👉 https://chopo-merida-precios.streamlit.app/
+    echo      https://chopo-merida-precios.streamlit.app/
     echo ===================================================================
 ) else (
     echo.
