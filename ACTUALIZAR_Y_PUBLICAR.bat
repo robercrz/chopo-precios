@@ -58,7 +58,8 @@ echo.
 git add db/chopo_prices.db exports/
 git commit -m "Auto-update precios Chopo Merida: %date% %time%" >nul 2>&1
 
-echo Subiendo datos a GitHub...
+echo Sincronizando y subiendo datos a GitHub...
+git pull --rebase origin main >nul 2>&1
 git push origin main
 
 if %errorlevel% equ 0 (
