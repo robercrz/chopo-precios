@@ -2,7 +2,8 @@
 chcp 65001 >nul 2>&1
 title Subir Cambios a GitHub - Chopo Precios
 
-cd /d "C:\Users\rober\Documents\proyeto test 1\chopo_scraper"
+cd /d "%~dp0"
+if exist "%LOCALAPPDATA%\Programs\Git\cmd\git.exe" set "PATH=%LOCALAPPDATA%\Programs\Git\cmd;%PATH%"
 
 echo ============================================================
 echo   SUBIENDO PROYECTO A GITHUB (robercrz/chopo-precios)
