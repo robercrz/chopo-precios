@@ -58,6 +58,7 @@ from scraper.favorites_manager import (
 )
 from dashboard.auth import require_auth, logout, verify_hash, get_configured_hashes
 from dashboard.lcm_comparator import render_lcm_comparator_tab
+from dashboard.lcm_smart_cotizador import render_smart_cotizador_tab
 from scraper.lcm_manager import (
     build_lcm_matches_index,
     find_lcm_match_for_study,
@@ -3197,8 +3198,9 @@ def main():
     is_admin = st.session_state.get("is_admin", False)
 
     if is_admin:
-        tab0, tab_lcm, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+        tab0, tab_cotiz, tab_lcm, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
             "⭐ Favoritos",
+            "🩺 Cotizador Inteligente LCM",
             "⚖️ Comparativa LCM vs Chopo",
             "📋 Catálogo",
             "🏷️ Descuentos & Promos",
@@ -3212,6 +3214,8 @@ def main():
 
         with tab0:
             render_favorites_tab(prices)
+        with tab_cotiz:
+            render_smart_cotizador_tab()
         with tab_lcm:
             render_lcm_comparator_tab(prices)
         with tab1:
@@ -3231,8 +3235,9 @@ def main():
         with tab8:
             render_logs_tab(scrape_log)
     else:
-        tab0, tab_lcm, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        tab0, tab_cotiz, tab_lcm, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
             "⭐ Favoritos",
+            "🩺 Cotizador Inteligente LCM",
             "⚖️ Comparativa LCM vs Chopo",
             "📋 Catálogo",
             "🏷️ Descuentos & Promos",
@@ -3244,6 +3249,8 @@ def main():
 
         with tab0:
             render_favorites_tab(prices)
+        with tab_cotiz:
+            render_smart_cotizador_tab()
         with tab_lcm:
             render_lcm_comparator_tab(prices)
         with tab1:

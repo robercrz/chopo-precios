@@ -771,7 +771,8 @@ def render_lcm_comparator_tab(chopo_prices: list):
 
         # ── Cotizador Inteligente de Check-Up + Adicionales (Mejor Tarifa) ──
         st.markdown("---")
-        st.markdown("### 🧮 Cotizador Inteligente: Check-Up + Estudios Adicionales")
+        st.info("💡 **Nueva Herramienta Dedicada:** Ahora dispones de la pestaña principal **'🩺 Cotizador Inteligente LCM'** en la barra superior con desglose de analitos por estudio, detección de duplicados, sugerencias automáticas de Check-Ups y ficha para WhatsApp.")
+        st.markdown("### 🧮 Cotizador Rápido: Check-Up + Estudios Adicionales")
         st.caption("Arma una cotización completa para el paciente. El sistema **aplica automáticamente la regla del mejor precio**: si una promoción de Octubre o cuatrimestral es más barata que el precio adicional, se respeta la promoción; si el precio adicional es menor, aplica el adicional.")
 
         # Selector de Tarifas a Considerar
