@@ -127,10 +127,16 @@ def render_lcm_comparator_tab(chopo_prices: list):
         study_options = []
         study_map = {}
         for m in matches:
-            label = f"[{m['lcm_code']}] {m['lcm_name']} (${m['lcm_price']:,.2f})"
-            if m["match_type"] != "NO_MATCH":
-                diff_str = f"LCM {'-' if m['diff_mxn'] < 0 else '+'}${abs(m['diff_mxn']):,.2f}"
-                label += f" ── vs Chopo: {m['chopo_name'][:30]}... ({diff_str})"
+            p_lcm_str = f"${m['lcm_price']:,.2f}" if m.get("lcm_price") is not None else "N/D"
+            label = f"[{m.get('lcm_code', '')}] {m.get('lcm_name', '')} ({p_lcm_str})"
+            if m.get("match_type") != "NO_MATCH" and m.get("chopo_name"):
+                diff_val = m.get("diff_mxn")
+                if diff_val is not None:
+                    diff_sign = "-" if diff_val < 0 else "+"
+                    diff_str = f"LCM {diff_sign}${abs(diff_val):,.2f}"
+                    label += f" ── vs Chopo: {m['chopo_name'][:30]}... ({diff_str})"
+                else:
+                    label += f" ── vs Chopo: {m['chopo_name'][:30]}... (Precio N/D)"
             else:
                 label += " ── (Exclusivo LCM / Sin homólogo en Chopo)"
             study_options.append(label)
@@ -465,7 +471,7 @@ def render_lcm_comparator_tab(chopo_prices: list):
         if not table_df.empty:
             st.dataframe(
                 table_df.style.format({
-                    "Precio LCM": "${:,.2f}",
+                    "Precio LCM": lambda x: f"${x:,.2f}" if pd.notna(x) else "N/D",
                     "Chopo Web": lambda x: f"${x:,.2f}" if pd.notna(x) else "N/D",
                     "Chopo Mostrador": lambda x: f"${x:,.2f}" if pd.notna(x) else "N/D",
                     "Dif ($)": lambda x: f"${x:+,.2f}" if pd.notna(x) else "N/D",
