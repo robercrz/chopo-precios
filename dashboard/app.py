@@ -437,22 +437,88 @@ def render_catalog_tab(prices: list, filters: dict):
 
     fav_names = get_favorite_names()
 
-    # ── Filtros y Selector Directo de Estudio ──────────────────────────────────
-    c_filt_fav, c_quick_sel = st.columns([2, 5])
+    # ── Inicializar estados de búsqueda y estudio activo ───────────────────────
+    if "cat_search_kw" not in st.session_state:
+        st.session_state["cat_search_kw"] = ""
+    if "catalog_active_study" not in st.session_state:
+        st.session_state["catalog_active_study"] = None
+
+    # Guardar copia completa de df para cálculos y métricas de especialidad
+    df_all_catalog = df.copy()
+
+    # ── Buscador Principal del Catálogo y Filtros Rápidos ──────────────────────
+    c_search_box, c_btn_clear, c_filt_fav = st.columns([5, 1.2, 2.2])
+
+    with c_search_box:
+        # Campo de texto estándar: permite seleccionar todo con Ctrl+A, borrar o escribir cualquier término
+        kw_input = st.text_input(
+            "🔍 Buscar estudios en el catálogo:",
+            value=st.session_state.get("cat_search_kw", ""),
+            placeholder="Escribe aquí (ej. vitamina, glucosa, perfil, tiroides, biometría)...",
+            key="cat_search_input_field",
+            help="Escribe cualquier palabra o término. La tabla se filtrará automáticamente mostrando todos los estudios que coincidan."
+        )
+        if kw_input != st.session_state.get("cat_search_kw", ""):
+            st.session_state["cat_search_kw"] = kw_input
+            st.rerun()
+
+    with c_btn_clear:
+        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+        if st.button("🧹 Limpiar", key="btn_clear_cat_search", use_container_width=True, help="Borrar búsqueda y mostrar todos los estudios"):
+            st.session_state["cat_search_kw"] = ""
+            st.session_state["catalog_active_study"] = None
+            if "cat_search_input_field" in st.session_state:
+                st.session_state["cat_search_input_field"] = ""
+            st.rerun()
+
     with c_filt_fav:
-        only_favs = st.checkbox(f"⭐ Ver solo mis Favoritos ({len(fav_names)})", value=False, key="cat_only_favs")
+        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+        only_favs = st.checkbox(f"⭐ Solo Favoritos ({len(fav_names)})", value=False, key="cat_only_favs")
+
+    # ── Píldoras de Búsqueda Rápida / Autocompletado Temático ──────────────────
+    quick_tags = [
+        ("💊 Vitaminas", "vitamina"),
+        ("🩸 Perfiles & Check Up", "perfil"),
+        ("🍬 Glucosa & Diabetes", "glucosa"),
+        ("🧬 Tiroides", "tiroid"),
+        ("🧪 Biometría", "biometr"),
+        ("❤️ Cardíaco & Lipídico", "colesterol"),
+        ("🦠 Cultivo / Orina", "cultivo"),
+    ]
+    pill_cols = st.columns(len(quick_tags))
+    for col, (label, tag_kw) in zip(pill_cols, quick_tags):
+        with col:
+            is_active_pill = (st.session_state.get("cat_search_kw", "").strip().lower() == tag_kw.lower())
+            btn_type = "primary" if is_active_pill else "secondary"
+            if st.button(label, key=f"quick_pill_{tag_kw}", type=btn_type, use_container_width=True):
+                st.session_state["cat_search_kw"] = tag_kw
+                st.session_state["catalog_active_study"] = None
+                st.rerun()
+
+    # ── Aplicar filtros al DataFrame ──────────────────────────────────────────
     if only_favs:
         df = df[df["study_name"].isin(fav_names)]
 
-    # ── Aplicar filtros del sidebar ───────────────────────────────────────────
+    # Filtros del sidebar (si existen)
     if filters.get("lab") and filters["lab"] != "Todos" and "lab_name" in df.columns:
         df = df[df["lab_name"] == filters["lab"]]
 
     if filters.get("category") and filters["category"] != "Todas" and "category" in df.columns:
         df = df[df["category"] == filters["category"]]
 
-    if filters.get("search"):
-        df = df[df["study_name"].str.contains(filters["search"], case=False, na=False)]
+    # Filtro de búsqueda (prioriza el buscador del catálogo, o el del sidebar)
+    active_search = (st.session_state.get("cat_search_kw") or "").strip()
+    if not active_search and filters.get("search"):
+        active_search = filters["search"].strip()
+
+    if active_search:
+        # Permite buscar múltiples palabras clave (ej. "vitamina d")
+        terms = active_search.split()
+        for t in terms:
+            df = df[
+                df["study_name"].str.contains(t, case=False, na=False) |
+                df["category"].str.contains(t, case=False, na=False)
+            ]
 
     if "price" in df.columns:
         mask = (df["price"].isna()) | (
@@ -462,41 +528,45 @@ def render_catalog_tab(prices: list, filters: dict):
 
     df = df.reset_index(drop=True)
 
-    # Selector con autocompletado en el encabezado
-    all_avail = sorted(df["study_name"].dropna().unique().tolist())
-    with c_quick_sel:
-        selected_from_picker = st.selectbox(
-            "🔍 Busca o selecciona un estudio para ver su detalle y gestionar favorito:",
-            options=["-- Escribe aquí el nombre de cualquier estudio para seleccionarlo --"] + all_avail,
-            key="cat_quick_picker_box",
-            help="Escribe cualquier parte del nombre (ej. glucosa, biometría, perfil) para seleccionarlo directamente sin buscarlo en la tabla."
-        )
+    # ── Resumen de Resultados y Selector de Autocompletado Opcional ────────────
+    st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+    c_status, c_picker = st.columns([3, 4])
 
-    # ── Conteo por categoría (mini badges) ────────────────────────────────────
-    cat_counts = df["category"].value_counts().to_dict() if "category" in df.columns else {}
-    badge_html = " ".join(
-        f'<span style="background:#1a5276;color:white;padding:2px 8px;border-radius:10px;font-size:0.75rem;margin:2px">'
-        f'{cat} ({cnt})</span>'
-        for cat, cnt in sorted(cat_counts.items(), key=lambda x: -x[1])[:8]
-    )
-    st.markdown(
-        f"Mostrando **{len(df)}** estudios &nbsp;|&nbsp; {badge_html}",
-        unsafe_allow_html=True,
-    )
+    with c_status:
+        if active_search:
+            st.markdown(f"🔍 Mostrando **{len(df)}** estudios que contienen **\"{active_search}\"**:")
+        else:
+            cat_counts = df["category"].value_counts().to_dict() if "category" in df.columns else {}
+            badge_html = " ".join(
+                f'<span style="background:#1a5276;color:white;padding:2px 8px;border-radius:10px;font-size:0.75rem;margin:2px">'
+                f'{cat} ({cnt})</span>'
+                for cat, cnt in sorted(cat_counts.items(), key=lambda x: -x[1])[:6]
+            )
+            st.markdown(f"Mostrando **{len(df)}** estudios &nbsp;|&nbsp; {badge_html}", unsafe_allow_html=True)
 
-    # ── Clic Rápido en Resultados de Búsqueda ──────────────────────────────────
-    if filters.get("search") and 0 < len(df) <= 12:
-        st.markdown("**⚡ Clic directo en cualquiera de estos resultados:**")
-        pill_cols = st.columns(min(4, len(df)))
-        for idx, (_, r_p) in enumerate(df.head(8).iterrows()):
-            with pill_cols[idx % 4]:
-                p_text = f"${r_p['price']:,.2f}" if pd.notna(r_p.get("price")) else ""
-                is_f_pill = "⭐ " if r_p["study_name"] in fav_names else ""
-                if st.button(f"{is_f_pill}{r_p['study_name'][:24]}\n{p_text}", key=f"pill_cat_{r_p['study_name']}", use_container_width=True):
-                    st.session_state["catalog_active_study"] = r_p["study_name"]
+    with c_picker:
+        # Selector de autocompletado con las opciones disponibles actualmente
+        if not df.empty:
+            avail_options = sorted(df["study_name"].dropna().unique().tolist())
+            current_active = st.session_state.get("catalog_active_study")
+            default_idx = 0
+            if current_active in avail_options:
+                default_idx = avail_options.index(current_active) + 1
+
+            picked_from_dropdown = st.selectbox(
+                "🎯 Seleccionar un estudio específico:",
+                options=["-- Elige o escribe un estudio de la lista para ver su detalle --"] + avail_options,
+                index=default_idx if default_idx <= len(avail_options) else 0,
+                key="cat_study_picker_dropdown",
+                label_visibility="collapsed",
+                help="Puedes seleccionar un estudio aquí o hacer clic directamente en cualquier fila de la tabla inferior."
+            )
+            if picked_from_dropdown and picked_from_dropdown != "-- Elige o escribe un estudio de la lista para ver su detalle --":
+                if picked_from_dropdown != st.session_state.get("catalog_active_study"):
+                    st.session_state["catalog_active_study"] = picked_from_dropdown
                     st.rerun()
 
-    # ── Tabla limpia (Sin columna de estrellas y sin índice numérico) ───────────
+    # ── Tabla Interactiva (Clic en cualquier fila para seleccionarlo) ──────────
     display_cols = [c for c in ["study_name", "category", "price", "price_raw", "lab_name", "city", "scraped_at"]
                     if c in df.columns]
     df_display = df[display_cols].copy()
@@ -514,53 +584,57 @@ def render_catalog_tab(prices: list, filters: dict):
     selection_event = st.dataframe(
         df_display,
         use_container_width=True,
-        height=400,
+        height=380,
         hide_index=True,
         on_select="rerun",
         selection_mode="single-row",
         column_config={
-            "Estudio": st.column_config.TextColumn("Estudio", width="large"),
+            "Estudio": st.column_config.TextColumn("Estudio (Haz clic en una fila para seleccionarlo)", width="large"),
             "Especialidad": st.column_config.TextColumn("Especialidad", width="medium"),
             "Precio": st.column_config.NumberColumn("Precio (MXN)", format="$%.2f", width="small"),
             "Actualizado": st.column_config.DatetimeColumn("Actualizado", width="small"),
         },
     )
 
-    # ── Determinar estudio activo seleccionado ─────────────────────────────────
-    active_study = None
-
-    # 1. Si eligió del dropdown de autocompletado
-    if selected_from_picker and selected_from_picker != "-- Escribe aquí el nombre de cualquier estudio para seleccionarlo --":
-        active_study = selected_from_picker
-
-    # 2. Si hizo clic en un botón rápido
-    elif "catalog_active_study" in st.session_state and st.session_state["catalog_active_study"]:
-        active_study = st.session_state["catalog_active_study"]
-
-    # 3. Si seleccionó una fila en la tabla
-    else:
-        selected_rows = getattr(selection_event, "selection", None)
-        if selected_rows and selected_rows.rows:
-            sel_idx = selected_rows.rows[0]
-            if sel_idx < len(df):
-                active_study = df.iloc[sel_idx]["study_name"]
+    # Capturar selección de fila en la tabla
+    selected_rows = getattr(selection_event, "selection", None)
+    if selected_rows and selected_rows.rows:
+        sel_idx = selected_rows.rows[0]
+        if sel_idx < len(df):
+            clicked_name = df.iloc[sel_idx]["study_name"]
+            if clicked_name != st.session_state.get("catalog_active_study"):
+                st.session_state["catalog_active_study"] = clicked_name
+                st.rerun()
 
     # ── Panel de Detalle y Gestión de Favorito ──────────────────────────────────
+    active_study = st.session_state.get("catalog_active_study")
+
     if active_study:
+        # Buscar en el df actual o en el df completo
         m_rows = df[df["study_name"] == active_study]
+        if m_rows.empty:
+            m_rows = df_all_catalog[df_all_catalog["study_name"] == active_study]
+
         if not m_rows.empty:
             row = m_rows.iloc[0]
             st_name = row["study_name"]
             st_price = row.get("price")
             st_cat = row.get("category", "")
             is_f = st_name in fav_names
-            p_str = f"${st_price:,.2f} MXN" if st_price else "Sin precio"
+            p_str = f"${st_price:,.2f} MXN" if pd.notna(st_price) else "Sin precio"
 
             st.markdown("---")
-            c_ban_info, c_ban_btn = st.columns([4, 2])
+            c_ban_info, c_ban_isolate, c_ban_btn = st.columns([4, 1.8, 1.8])
             with c_ban_info:
                 fav_status = "⭐ Ya está en tus Favoritos" if is_f else "☆ No está en Favoritos"
                 st.info(f"📌 **Estudio Seleccionado:** **{st_name}** ({p_str}) | Especialidad: `{st_cat}` | **{fav_status}**")
+
+            with c_ban_isolate:
+                if active_search.lower() != st_name.lower():
+                    if st.button("🎯 Aislar en la tabla", key=f"btn_isolate_{st_name}", use_container_width=True, help="Filtrar la tabla para mostrar únicamente este estudio"):
+                        st.session_state["cat_search_kw"] = st_name
+                        st.rerun()
+
             with c_ban_btn:
                 if is_f:
                     if st.button("💛 Quitar de Favoritos", key=f"quick_del_{st_name}", use_container_width=True):
@@ -573,9 +647,9 @@ def render_catalog_tab(prices: list, filters: dict):
                         st.toast(f"⭐ '{st_name}' agregado a favoritos!")
                         st.rerun()
 
-            _render_study_detail(row, df, fav_names)
+            _render_study_detail(row, df_all_catalog, fav_names)
     else:
-        st.caption("💡 **Tip:** Escribe el nombre de cualquier estudio en el buscador superior o selecciona una fila para ver su análisis completo y gestionarlo.")
+        st.caption("💡 **Tip:** Escribe cualquier palabra clave arriba (ej. *vitamina*), haz clic en una fila de la tabla o usa las píldoras de acceso rápido para ver el análisis del estudio y marcarlo como favorito.")
 
 
 
