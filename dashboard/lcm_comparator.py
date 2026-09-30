@@ -6,6 +6,7 @@
 # ============================================================
 
 import json
+import re
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 import io
@@ -50,10 +51,34 @@ def load_comparison_data() -> Dict[str, Any]:
     return get_consolidated_matches()
 
 
-def format_currency(val: Optional[float]) -> str:
-    if val is None or pd.isna(val):
+def format_currency(val: Any, default: str = "N/D") -> str:
+    if val is None or pd.isna(val) or str(val).strip() in ("", "None", "nan", "N/D", "N/A"):
+        return default
+    try:
+        clean = float(re.sub(r"[^\d.]", "", str(val)))
+        return f"${clean:,.2f}"
+    except (ValueError, TypeError):
+        return default
+
+
+def format_pct(val: Any) -> str:
+    if val is None or pd.isna(val) or str(val).strip() in ("", "None", "nan", "N/D", "N/A"):
         return "N/D"
-    return f"${val:,.2f}"
+    try:
+        clean = float(re.sub(r"[^\d.-]", "", str(val)))
+        return f"{clean:+.1f}%"
+    except (ValueError, TypeError):
+        return "N/D"
+
+
+def format_diff(val: Any) -> str:
+    if val is None or pd.isna(val) or str(val).strip() in ("", "None", "nan", "N/D", "N/A"):
+        return "N/D"
+    try:
+        clean = float(re.sub(r"[^\d.-]", "", str(val)))
+        return f"${clean:+,.2f}"
+    except (ValueError, TypeError):
+        return "N/D"
 
 
 def render_lcm_comparator_tab(chopo_prices: list):
@@ -909,10 +934,10 @@ def render_lcm_comparator_tab(chopo_prices: list):
                 df_quote = pd.DataFrame(quote_rows)
                 st.dataframe(
                     df_quote.style.format({
-                        "Precio Lista": "${:,.2f}",
-                        "Tarifa en Check-Up": lambda x: f"${x:,.2f}" if pd.notna(x) else "N/A",
-                        "Tarifa Promo Activa": lambda x: f"${x:,.2f}" if pd.notna(x) else "N/A",
-                        "Precio Aplicado": "${:,.2f}",
+                        "Precio Lista": lambda x: format_currency(x, "N/D"),
+                        "Tarifa en Check-Up": lambda x: format_currency(x, "N/A"),
+                        "Tarifa Promo Activa": lambda x: format_currency(x, "N/A"),
+                        "Precio Aplicado": lambda x: format_currency(x, "N/D"),
                     }),
                     use_container_width=True,
                     hide_index=True
@@ -1067,13 +1092,13 @@ def render_lcm_comparator_tab(chopo_prices: list):
         if not table_df.empty:
             st.dataframe(
                 table_df.style.format({
-                    "Precio Lista LCM": lambda x: f"${x:,.2f}" if pd.notna(x) else "N/D",
-                    "Tarifa en Check-Up": lambda x: f"${x:,.2f}" if pd.notna(x) else "N/A",
-                    "Tarifa Promoción": lambda x: f"${x:,.2f}" if pd.notna(x) else "N/A",
-                    "Chopo Web": lambda x: f"${x:,.2f}" if pd.notna(x) else "N/D",
-                    "Chopo Mostrador": lambda x: f"${x:,.2f}" if pd.notna(x) else "N/D",
-                    "Dif ($)": lambda x: f"${x:+,.2f}" if pd.notna(x) else "N/D",
-                    "Dif (%)": lambda x: f"{x:+.1f}%" if pd.notna(x) else "N/D",
+                    "Precio Lista LCM": lambda x: format_currency(x, "N/D"),
+                    "Tarifa en Check-Up": lambda x: format_currency(x, "N/A"),
+                    "Tarifa Promoción": lambda x: format_currency(x, "N/A"),
+                    "Chopo Web": lambda x: format_currency(x, "N/D"),
+                    "Chopo Mostrador": lambda x: format_currency(x, "N/D"),
+                    "Dif ($)": format_diff,
+                    "Dif (%)": format_pct,
                 }),
                 use_container_width=True,
                 height=520,

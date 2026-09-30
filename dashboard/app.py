@@ -250,9 +250,13 @@ def load_data():
 
 def format_price(price):
     """Formatea un precio como moneda MXN."""
-    if price is None or pd.isna(price):
+    if price is None or pd.isna(price) or str(price).strip() in ("", "None", "nan", "N/D"):
         return "N/D"
-    return f"${price:,.2f}"
+    try:
+        clean = float(re.sub(r"[^\d.]", "", str(price)))
+        return f"${clean:,.2f}"
+    except (ValueError, TypeError):
+        return "N/D"
 
 
 # ── Header ─────────────────────────────────────────────────────────────────────

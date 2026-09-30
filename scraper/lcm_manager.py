@@ -745,6 +745,11 @@ def calculate_best_lcm_price(
     - Compara Precio de Lista vs Precio Adicional (si aplica con Check-Up) vs Precio Promoción Activa / Próxima.
     - Respeta SIEMPRE el precio más bajo para el paciente.
     """
+    try:
+        price_list = float(re.sub(r"[^\d.]", "", str(price_list or 0)))
+    except (ValueError, TypeError):
+        price_list = 0.0
+
     code_k = str(study_code or "").strip()
     name_norm = clean_medical_text(study_name or "")
 
