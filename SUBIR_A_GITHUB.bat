@@ -10,8 +10,8 @@ echo   SUBIENDO PROYECTO A GITHUB (robercrz/chopo-precios)
 echo ============================================================
 echo.
 
-git add .
-git commit -m "Actualizacion de base de datos y mejoras" >nul 2>&1
+git add dashboard/ scraper/ config/ db/*.py requirements.txt requirements-scraper.txt *.bat README.md
+git commit -m "Actualizacion de codigo y mejoras" >nul 2>&1
 echo Enviando cambios a GitHub...
 git push -u origin main
 

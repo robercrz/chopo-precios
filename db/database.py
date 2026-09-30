@@ -339,15 +339,20 @@ def add_favorite(study_name: str, lab_key: str, branch: str = None,
         conn.close()
 
 
-def remove_favorite(study_name: str, lab_key: str, branch: str = None) -> bool:
+def remove_favorite(study_name: str, lab_key: str = None, branch: str = None) -> bool:
     """Elimina un estudio de favoritos."""
     conn = get_connection()
     try:
         with conn:
-            conn.execute("""
-                DELETE FROM favorites
-                WHERE study_name = ? AND lab_key = ? AND (branch = ? OR branch IS NULL)
-            """, (study_name, lab_key, branch))
+            if lab_key:
+                conn.execute("""
+                    DELETE FROM favorites
+                    WHERE study_name = ? AND lab_key = ? AND (branch = ? OR branch IS NULL)
+                """, (study_name, lab_key, branch))
+            else:
+                conn.execute("""
+                    DELETE FROM favorites WHERE study_name = ?
+                """, (study_name,))
         return True
     except Exception:
         return False

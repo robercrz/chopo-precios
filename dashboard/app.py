@@ -47,39 +47,43 @@ from scraper.scheduler_manager import (
     get_config as get_scheduler_config,
     save_config as save_scheduler_config,
 )
+from scraper.favorites_manager import (
+    load_all_favorites,
+    get_favorite_study_names,
+    add_favorite_study,
+    remove_favorite_study,
+    import_favorites_from_json,
+    export_favorites_to_json,
+)
 
-# ── Manejador de Favoritos (Nativo: Session State & Base de Datos SQLite) ────────
+# ── Manejador de Favoritos (Persistencia Robusta: JSON + SQLite + Gist) ────────
 def get_user_favorite_names(cm=None) -> set:
-    """Obtiene los nombres de favoritos del usuario desde la sesión con respaldo en SQLite."""
+    """Obtiene los nombres de favoritos del usuario desde la sesión con respaldo persistente."""
     if "user_favorites_set" in st.session_state and st.session_state["user_favorites_set"] is not None:
         return st.session_state["user_favorites_set"]
 
-    favs = set()
-    db_favs = get_favorite_names()
-    if db_favs:
-        favs.update(db_favs)
-
+    favs = get_favorite_study_names()
     st.session_state["user_favorites_set"] = favs
     return favs
 
 
 def add_user_fav(study_name: str, lab_key: str = "chopo_yucatan", branch: str = None, cm=None):
-    """Guarda un favorito en sesión y en SQLite."""
+    """Guarda un favorito en sesión, en config/mis_favoritos.json y en SQLite."""
     favs = get_user_favorite_names()
     favs.add(study_name)
     st.session_state["user_favorites_set"] = favs
 
-    add_favorite(study_name, lab_key, branch)
+    add_favorite_study(study_name, lab_key, branch)
     st.toast(f"⭐ '{study_name}' agregado a favoritos!")
 
 
 def remove_user_fav(study_name: str, lab_key: str = "chopo_yucatan", branch: str = None, cm=None):
-    """Elimina un favorito de la sesión y de SQLite."""
+    """Elimina un favorito de la sesión, de config/mis_favoritos.json y de SQLite."""
     favs = get_user_favorite_names()
     favs.discard(study_name)
     st.session_state["user_favorites_set"] = favs
 
-    remove_favorite(study_name, lab_key, branch)
+    remove_favorite_study(study_name, lab_key, branch)
     st.toast(f"'{study_name}' removido de tus favoritos")
 
 
@@ -1327,21 +1331,35 @@ def render_changes_tab(changes: list):
 def render_favorites_tab(prices: list, **kwargs):
     user_fav_names = get_user_favorite_names()
 
-    c_fav_hdr, c_fav_export = st.columns([4, 2])
+    c_fav_hdr, c_fav_export = st.columns([3.5, 2.5])
     with c_fav_hdr:
         st.markdown("### ⭐ Mis Estudios Favoritos")
-        st.caption("⭐ Estudios que monitoreas de cerca. Guardados en tu sesión y respaldados en la base de datos.")
+        st.caption("⭐ Estudios que monitoreas de cerca. Protegidos en tu archivo de configuración y base de datos.")
     with c_fav_export:
-        if user_fav_names:
-            import json
-            st.download_button(
-                "💾 Respaldar Favoritos (JSON)",
-                data=json.dumps(list(user_fav_names), indent=2, ensure_ascii=False),
-                file_name="mis_favoritos_chopo.json",
-                mime="application/json",
-                use_container_width=True,
-                help="Descarga tus favoritos para guardarlos o transferirlos a otro celular o computadora."
-            )
+        c_dl, c_up = st.columns(2)
+        with c_dl:
+            if user_fav_names:
+                st.download_button(
+                    "💾 Respaldar JSON",
+                    data=export_favorites_to_json(),
+                    file_name="mis_favoritos_chopo.json",
+                    mime="application/json",
+                    use_container_width=True,
+                    help="Descarga tus favoritos para guardarlos o transferirlos a otro celular o computadora."
+                )
+        with c_up:
+            st.checkbox("📥 Restaurar", key="toggle_fav_importer", help="Importar favoritos desde archivo JSON")
+
+    if st.session_state.get("toggle_fav_importer"):
+        with st.expander("📥 Restaurar / Importar Favoritos desde archivo JSON", expanded=True):
+            uploaded_fav_file = st.file_uploader("Selecciona tu archivo mis_favoritos_chopo.json:", type=["json"], key="uploader_fav_json")
+            if uploaded_fav_file is not None:
+                content = uploaded_fav_file.read().decode("utf-8")
+                if st.button("Restaurar Favoritos ahora", type="primary", use_container_width=True):
+                    imported_count = import_favorites_from_json(content)
+                    st.session_state["user_favorites_set"] = get_favorite_study_names()
+                    st.success(f"✅ ¡{imported_count} favoritos restaurados exitosamente!")
+                    st.rerun()
 
     # Cargar registros desde DB y completar con los del navegador
     db_favs = get_favorites()
