@@ -21,12 +21,17 @@ from scraper.lcm_manager import (
     load_promotions,
     add_or_update_promotion,
     delete_promotion,
+    archive_promotion,
+    unarchive_promotion,
+    get_available_periods,
+    get_study_price_history,
     detect_columns,
     process_uploaded_catalog,
     get_consolidated_matches,
     load_adicionales,
     calculate_best_lcm_price,
     get_adicionales_lookup,
+    get_active_promos_lookup,
 )
 
 
@@ -349,51 +354,127 @@ def render_lcm_comparator_tab(chopo_prices: list):
     # SUBTAB 2: Paquetes & Promociones con Plazos (Vigencias)
     # =========================================================================
     with subtab2:
-        st.markdown("#### 🎁 Gestor de Paquetes y Promociones con Plazos de Vigencia")
-        st.caption("Crea, edita y monitorea promociones especiales de LCM con control de vencimiento (días, meses o plazos específicos).")
+        st.markdown("#### 🎁 Gestor de Paquetes, Promociones y Registro Histórico de LCM")
+        st.caption("Administra campañas mensuales de Octubre, paquetes cuatrimestrales (vencen 31 de dic), promociones permanentes y consulta el histórico de períodos anteriores.")
 
-        # Visualizar Promociones Activas
-        st.markdown("##### 🟢 Promociones y Paquetes Vigentes")
-        
-        # Filtro de estatus
-        status_opts = ["Todas las vigencias", "Solo Activas & Permanentes", "Por Vencer", "Vencidas"]
-        sel_stat = st.segmented_control("Filtrar por estatus:", status_opts, default="Solo Activas & Permanentes") if hasattr(st, "segmented_control") else st.radio("Filtrar:", status_opts, horizontal=True)
+        # ── 1. SELECTOR DE PERÍODO / CAMPAÑA Y FILTRO DE ESTATUS ────────────
+        col_f1, col_f2 = st.columns([2, 1])
+        with col_f1:
+            period_options = [
+                "🌟 Todos los Períodos (Activas, Futuras y Pasadas)",
+                "🍁 Octubre 2026 (Mensual - Inicia Mañana)",
+                "🍂 Cuatrimestre Sep - Dic 2026 (Vence 31 Dic)",
+                "♾️ Permanentes (Sin Caducidad)",
+                "📜 Histórico: Septiembre 2026 (Mes Patrio)",
+                "📜 Histórico: Agosto 2026 (Regreso a Clases)",
+                "🗂️ Ver Todo el Histórico de Períodos Anteriores"
+            ]
+            sel_period = st.selectbox("📅 Seleccionar Campaña / Período a consultar:", period_options, index=0)
 
+        with col_f2:
+            status_opts = ["Todos los estatus", "🟢 Solo Vigentes Hoy", "🟡 Próximas (Inician Mañana)", "🟠 Por Vencer (≤ 3 días)", "🔴 Finalizadas / Histórico"]
+            sel_stat = st.selectbox("Filtro por estatus:", status_opts, index=0)
+
+        # Banner informativo cuando se consulta el histórico
+        if "Histórico" in sel_period or "Septiembre" in sel_period or "Agosto" in sel_period:
+            st.info(f"📜 **Vista de Registro Histórico Activa**: Consultando las tarifas del período **{sel_period}**. Este registro permite comparar cómo han variado los precios promocionales de LCM frente a las tarifas actuales.")
+
+        # Filtrar promociones
         filtered_promos = []
         for p in promotions:
             st_code = p.get("status", "ACTIVE")
-            if sel_stat == "Solo Activas & Permanentes" and st_code not in ("ACTIVE", "PERMANENT", "EXPIRING_SOON"):
+            p_period = p.get("period", "")
+            is_arch = p.get("is_archived", False)
+
+            # Filtro por período
+            if sel_period == "🍁 Octubre 2026 (Mensual - Inicia Mañana)" and p_period != "Octubre 2026":
                 continue
-            elif sel_stat == "Por Vencer" and st_code != "EXPIRING_SOON":
+            elif sel_period == "🍂 Cuatrimestre Sep - Dic 2026 (Vence 31 Dic)" and p_period != "Cuatrimestre Sep - Dic 2026":
                 continue
-            elif sel_stat == "Vencidas" and st_code != "EXPIRED":
+            elif sel_period == "♾️ Permanentes (Sin Caducidad)" and p_period != "Permanentes":
                 continue
+            elif sel_period == "📜 Histórico: Septiembre 2026 (Mes Patrio)" and p_period != "Septiembre 2026":
+                continue
+            elif sel_period == "📜 Histórico: Agosto 2026 (Regreso a Clases)" and p_period != "Agosto 2026":
+                continue
+            elif sel_period == "🗂️ Ver Todo el Histórico de Períodos Anteriores" and not (is_arch or st_code in ("EXPIRED", "ARCHIVED")):
+                continue
+
+            # Filtro por estatus
+            if sel_stat == "🟢 Solo Vigentes Hoy" and st_code not in ("ACTIVE", "PERMANENT"):
+                continue
+            elif sel_stat == "🟡 Próximas (Inician Mañana)" and st_code != "UPCOMING":
+                continue
+            elif sel_stat == "🟠 Por Vencer (≤ 3 días)" and st_code != "EXPIRING_SOON":
+                continue
+            elif sel_stat == "🔴 Finalizadas / Histórico" and not (is_arch or st_code in ("EXPIRED", "ARCHIVED")):
+                continue
+
             filtered_promos.append(p)
 
-        if not filtered_promos:
-            st.info("No hay promociones en la categoría seleccionada.")
-        else:
+        # Métricas resumidas del período seleccionado
+        if filtered_promos:
+            p_prices = [p.get("price_promo") for p in filtered_promos if p.get("price_promo") is not None]
+            avg_p = sum(p_prices) / len(p_prices) if p_prices else 0.0
+            mc1, mc2, mc3 = st.columns(3)
+            with mc1:
+                st.metric("Promociones / Paquetes en Vista", len(filtered_promos))
+            with mc2:
+                st.metric("Precio Promedio Promoción", f"${avg_p:,.2f}" if avg_p > 0 else "N/A")
+            with mc3:
+                upc_count = sum(1 for p in filtered_promos if p.get("status") == "UPCOMING")
+                act_count = sum(1 for p in filtered_promos if p.get("status") in ("ACTIVE", "PERMANENT"))
+                st.metric("Estado Campaña", f"{act_count} activas · {upc_count} inician mañana")
+
             # Renderizar tarjetas en rejilla
             cols = st.columns(2)
             for i, p in enumerate(filtered_promos):
                 with cols[i % 2]:
+                    st_code = p.get("status", "ACTIVE")
                     st_label = p.get("status_label", "Activa")
                     chopo_eq = p.get("chopo_equivalent", "No especificado")
                     price_promo = p.get("price_promo", 0.0)
                     price_reg = p.get("price_regular")
                     reg_str = f"<span style='font-size:0.8rem; color:#94a3b8; text-decoration:line-through;'>${price_reg:,.2f}</span>" if price_reg else ""
                     studies_str = ", ".join(p.get("studies", [])) if p.get("studies") else "Sin desglose"
+                    p_period_badge = p.get("period", "General")
 
-                    border_color = "#22c55e" if "Activa" in st_label or "Permanente" in st_label else ("#f97316" if "Por vencer" in st_label else "#ef4444")
+                    if st_code == "UPCOMING":
+                        border_color = "#eab308"
+                        bg_badge = "#fef9c3"
+                        col_badge = "#854d0e"
+                    elif st_code in ("ACTIVE", "PERMANENT"):
+                        border_color = "#22c55e"
+                        bg_badge = "#ecfdf5"
+                        col_badge = "#15803d"
+                    elif st_code == "EXPIRING_SOON":
+                        border_color = "#f97316"
+                        bg_badge = "#ffedd5"
+                        col_badge = "#9a3412"
+                    else:
+                        border_color = "#94a3b8"
+                        bg_badge = "#f1f5f9"
+                        col_badge = "#475569"
+
+                    start_str = p.get("start_date", "")
+                    end_str = p.get("end_date", "")
+                    dates_info = ""
+                    if start_str and end_str:
+                        dates_info = f"<span style='font-size:0.75rem; color:#64748b;'>🗓️ Vigencia: <b>{start_str}</b> al <b>{end_str}</b></span>"
+                    elif end_str:
+                        dates_info = f"<span style='font-size:0.75rem; color:#64748b;'>🗓️ Vence: <b>{end_str}</b></span>"
+                    elif st_code == "PERMANENT":
+                        dates_info = "<span style='font-size:0.75rem; color:#0284c7;'>♾️ Tarifa permanente sin vencimiento</span>"
 
                     st.markdown(f"""
                     <div style="background:#ffffff; border:1px solid #e2e8f0; border-top:4px solid {border_color}; border-radius:10px; padding:16px; margin-bottom:14px; box-shadow:0 2px 6px rgba(0,0,0,0.04);">
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <span style="font-weight:700; font-size:0.78rem; color:#1e293b;">{st_label}</span>
-                            <span style="background:#f1f5f9; color:#475569; font-weight:700; font-size:0.75rem; padding:3px 8px; border-radius:10px;">{p.get('category', 'Promoción')}</span>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <span style="font-weight:700; font-size:0.78rem; background:{bg_badge}; color:{col_badge}; padding:2px 8px; border-radius:6px;">{st_label}</span>
+                            <span style="background:#e0f2fe; color:#0369a1; font-weight:700; font-size:0.75rem; padding:2px 8px; border-radius:10px;">{p_period_badge}</span>
                         </div>
-                        <h4 style="color:#0f172a; margin:8px 0 4px 0; font-size:1.15rem;">{p.get('name')}</h4>
-                        <p style="color:#64748b; font-size:0.82rem; margin:0 0 10px 0;"><b>Estudios:</b> {studies_str}</p>
+                        <h4 style="color:#0f172a; margin:6px 0 4px 0; font-size:1.15rem;">{p.get('name')}</h4>
+                        <p style="color:#64748b; font-size:0.82rem; margin:0 0 6px 0;"><b>Estudios:</b> {studies_str}</p>
+                        <div style="margin-bottom:8px;">{dates_info}</div>
                         <div style="display:flex; justify-content:space-between; align-items:baseline; background:#f8fafc; padding:10px 14px; border-radius:8px;">
                             <div>
                                 <span style="font-size:0.72rem; color:#64748b; display:block;">Precio Promoción LCM</span>
@@ -401,115 +482,214 @@ def render_lcm_comparator_tab(chopo_prices: list):
                             </div>
                             <div style="text-align:right;">
                                 <span style="font-size:0.72rem; color:#64748b; display:block;">Contraparte Chopo</span>
-                                <span style="font-size:0.82rem; font-weight:700; color:#475569;">{chopo_eq[:28]}...</span>
+                                <span style="font-size:0.82rem; font-weight:700; color:#475569;">{chopo_eq[:28]}</span>
                             </div>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
 
-        # ── Formulario de Creación / Configuración de Plazos ─────────────────
-        st.markdown("---")
-        with st.expander("➕ Crear Nueva Promoción o Paquete con Plazo de Vigencia", expanded=False):
-            st.markdown("Configura una promoción especial asignando plazos de duración automáticos (días, fin de mes, fechas límites o permanente).")
+                    if p.get("notes"):
+                        st.caption(f"💡 *Nota:* {p.get('notes')}")
 
-            with st.form("create_promo_form"):
-                fc1, fc2 = st.columns([2, 1])
-                with fc1:
-                    new_promo_name = st.text_input("Nombre de la Promoción / Paquete *", placeholder="Ej. Check Up Femenino Rosa, Promo Fin de Semana...")
-                with fc2:
-                    new_promo_cat = st.selectbox("Categoría:", ["Promo del Mes", "Promo Cuatrimestral", "Promo Permanente", "Promo Fin de Semana", "Flash 48h", "Convenio Especial"])
+                    if is_admin:
+                        btn_c1, btn_c2 = st.columns(2)
+                        with btn_c1:
+                            if not p.get("is_archived"):
+                                if st.button("📦 Archivar", key=f"arch_{p.get('id')}", use_container_width=True):
+                                    archive_promotion(p.get("id"))
+                                    st.toast(f"'{p.get('name')}' archivada en el histórico.")
+                                    st.rerun()
+                            else:
+                                if st.button("🔄 Reactivar", key=f"unarch_{p.get('id')}", use_container_width=True):
+                                    unarchive_promotion(p.get("id"))
+                                    st.toast(f"'{p.get('name')}' reactivada.")
+                                    st.rerun()
+                        with btn_c2:
+                            if st.button("🗑️ Eliminar", key=f"del_{p.get('id')}", type="secondary", use_container_width=True):
+                                delete_promotion(p.get("id"))
+                                st.toast("Promoción eliminada.")
+                                st.rerun()
+        else:
+            st.info("No hay promociones registradas para la combinación de período y estatus seleccionada.")
 
-                # Selección de estudios
-                study_names_list = sorted(list({m.get("lcm_name") for m in matches if m.get("lcm_name")}))
-                selected_studies = st.multiselect(
-                    "Estudios incluidos en el paquete (puedes seleccionar varios):",
-                    options=study_names_list,
-                    placeholder="Busca y agrega estudios (ej. Biometría, Glucosa, Tiroideo...)"
+        # ── 2. COMPARATIVA HISTÓRICA DE PRECIOS POR ESTUDIO ─────────────────
+        with st.expander("📈 Consultar Evolución de Precios Históricos por Estudio", expanded=False):
+            st.caption("Selecciona cualquier estudio para consultar el histórico de precios que ha tenido en Agosto, Septiembre, Octubre 2026, Paquetes Cuatrimestrales y Catálogo General.")
+            all_lcm_names = sorted(list({m.get("lcm_name") for m in matches if m.get("lcm_name")}))
+            default_study_idx = all_lcm_names.index("Perfil tiroideo") if "Perfil tiroideo" in all_lcm_names else 0
+            sel_hist_study = st.selectbox("Selecciona el estudio clínico a auditar:", options=all_lcm_names, index=default_study_idx)
+
+            hist_data = get_study_price_history(sel_hist_study)
+            if hist_data:
+                df_h = pd.DataFrame(hist_data)
+                cols_to_show = ["period", "promo_name", "price", "price_regular", "status_label", "start_date", "end_date"]
+                present_cols = [c for c in cols_to_show if c in df_h.columns]
+                st.dataframe(
+                    df_h[present_cols].rename(columns={
+                        "period": "Campaña / Período",
+                        "promo_name": "Nombre Registrado",
+                        "price": "Precio Promo ($)",
+                        "price_regular": "Precio Regular ($)",
+                        "status_label": "Estado de Vigencia",
+                        "start_date": "Fecha Inicio",
+                        "end_date": "Fecha Fin"
+                    }),
+                    use_container_width=True,
+                    hide_index=True
                 )
+            else:
+                st.info(f"El estudio '{sel_hist_study}' no cuenta con promociones especiales archivadas. Aplica precio de catálogo regular de lista.")
 
-                # Precios
-                pc1, pc2, pc3 = st.columns(3)
-                with pc1:
-                    new_promo_price = st.number_input("Precio Promoción ($ MXN) *", min_value=0.0, value=499.0, step=10.0, format="%.2f")
-                with pc2:
-                    new_reg_price = st.number_input("Precio Regular / Anterior ($ MXN opcional)", min_value=0.0, value=0.0, step=10.0, format="%.2f")
-                with pc3:
-                    new_chopo_eq = st.text_input("Contraparte sugerida en Chopo:", placeholder="Ej. CHECK UP BÁSICO Q45")
+        # ── 3. EXPORTAR PROMOCIONES E HISTORIAL A EXCEL ──────────────────────
+        with io.BytesIO() as b:
+            with pd.ExcelWriter(b, engine="openpyxl") as writer:
+                p_actives = [p for p in promotions if p.get("status") in ("ACTIVE", "PERMANENT", "UPCOMING", "EXPIRING_SOON")]
+                if p_actives:
+                    pd.DataFrame(p_actives)[["period", "name", "category", "price_promo", "price_regular", "start_date", "end_date", "status_label", "notes"]].to_excel(writer, sheet_name="Promos Vigentes y Octubre", index=False)
+                p_hist = [p for p in promotions if p.get("status") in ("EXPIRED", "ARCHIVED") or p.get("is_archived")]
+                if p_hist:
+                    pd.DataFrame(p_hist)[["period", "name", "category", "price_promo", "price_regular", "start_date", "end_date", "status_label", "notes"]].to_excel(writer, sheet_name="Histórico Períodos", index=False)
+                adic_full = load_adicionales()
+                if adic_full:
+                    pd.DataFrame(adic_full).to_excel(writer, sheet_name="Adicionales en Check-Up", index=False)
+            b.seek(0)
+            excel_promos_bytes = b.getvalue()
 
-                # Plazos y Vigencia
-                st.markdown("##### ⏱️ Configuración del Plazo de Vigencia")
-                vc1, vc2 = st.columns([1, 1])
-                with vc1:
-                    duration_mode = st.selectbox(
-                        "Tipo de Plazo / Duración:",
-                        [
-                            "Días específicos (ej. 1, 2, 3, 7 días)",
-                            "Hasta fin de este mes",
-                            "Fecha límite exacta (calendario)",
-                            "1 Año (Anual)",
-                            "Permanente (Sin fecha de caducidad)"
-                        ]
+        st.download_button(
+            "📥 Descargar Calendario de Promociones e Historial Completo (.xlsx)",
+            data=excel_promos_bytes,
+            file_name="LCM_Promociones_e_Historial_2026.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
+
+        # ── 4. FORMULARIO DE CREACIÓN DE PROMOCIÓN CON CAMPAÑA / PERÍODO ────
+        if is_admin:
+            with st.expander("➕ Crear Nueva Promoción o Paquete con Período y Vigencia", expanded=False):
+                st.markdown("Configura una nueva promoción asignando su campaña (ej. Noviembre 2026, Buen Fin), fecha de inicio y plazo de finalización.")
+                with st.form("create_promo_form"):
+                    fc1, fc2, fc3 = st.columns([2, 1, 1])
+                    with fc1:
+                        new_promo_name = st.text_input("Nombre de la Promoción / Paquete *", placeholder="Ej. Check Up Femenino Rosa, Promo Fin de Semana...")
+                    with fc2:
+                        new_promo_period = st.text_input("Campaña / Período *", value="Octubre 2026", placeholder="Ej. Octubre 2026, Noviembre 2026, Buen Fin...")
+                    with fc3:
+                        new_promo_cat = st.selectbox("Categoría:", ["Promo del Mes", "Promo Cuatrimestral", "Promo Permanente", "Promo Fin de Semana", "Flash 48h", "Convenio Especial"])
+
+                    study_names_list = sorted(list({m.get("lcm_name") for m in matches if m.get("lcm_name")}))
+                    selected_studies = st.multiselect(
+                        "Estudios incluidos en el paquete (puedes seleccionar varios):",
+                        options=study_names_list,
+                        placeholder="Busca y agrega estudios (ej. Biometría, Glucosa, Tiroideo...)"
                     )
 
-                calculated_end_date = None
-                with vc2:
-                    today = date.today()
-                    if duration_mode == "Días específicos (ej. 1, 2, 3, 7 días)":
-                        num_days = st.number_input("Número de días de duración:", min_value=1, max_value=365, value=3, step=1)
-                        calculated_end_date = (today + timedelta(days=int(num_days))).isoformat()
-                        st.caption(f"Vencerá el: **{calculated_end_date}** ({num_days} días a partir de hoy).")
-                    elif duration_mode == "Hasta fin de este mes":
-                        eom = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+                    pc1, pc2, pc3 = st.columns(3)
+                    with pc1:
+                        new_promo_price = st.number_input("Precio Promoción ($ MXN) *", min_value=0.0, value=499.0, step=10.0, format="%.2f")
+                    with pc2:
+                        new_reg_price = st.number_input("Precio Regular / Anterior ($ MXN opcional)", min_value=0.0, value=0.0, step=10.0, format="%.2f")
+                    with pc3:
+                        new_chopo_eq = st.text_input("Contraparte sugerida en Chopo:", placeholder="Ej. CHECK UP BÁSICO Q45")
+
+                    st.markdown("##### ⏱️ Fechas y Plazo de Vigencia")
+                    vc1, vc2 = st.columns([1, 1])
+                    with vc1:
+                        today_d = date.today()
+                        new_start_d = st.date_input("Fecha de Inicio:", value=today_d + timedelta(days=1) if today_d.day == 30 and today_d.month == 9 else today_d)
+                    with vc2:
+                        duration_mode = st.selectbox(
+                            "Tipo de Plazo / Duración:",
+                            [
+                                "Hasta fin de mes (Mensual)",
+                                "Cuatrimestral (Hasta 31 de Diciembre)",
+                                "Días específicos (ej. 1, 2, 3, 7 días)",
+                                "Fecha límite exacta (calendario)",
+                                "1 Año (Anual)",
+                                "Permanente (Sin fecha de caducidad)"
+                            ]
+                        )
+
+                    calculated_end_date = None
+                    if duration_mode == "Hasta fin de mes (Mensual)":
+                        next_m = (new_start_d.replace(day=28) + timedelta(days=4)).replace(day=1)
+                        eom = next_m - timedelta(days=1)
                         calculated_end_date = eom.isoformat()
-                        st.caption(f"Vencerá el último día del mes en curso: **{calculated_end_date}**.")
-                    elif duration_mode == "1 Año (Anual)":
-                        calculated_end_date = (today + timedelta(days=365)).isoformat()
-                        st.caption(f"Vencerá en 1 año: **{calculated_end_date}**.")
+                        st.caption(f"Vencerá el: **{calculated_end_date}** (fin de mes).")
+                    elif duration_mode == "Cuatrimestral (Hasta 31 de Diciembre)":
+                        calculated_end_date = f"{new_start_d.year}-12-31"
+                        st.caption(f"Vencerá el: **{calculated_end_date}** (cierre de cuatrimestre).")
+                    elif duration_mode == "Días específicos (ej. 1, 2, 3, 7 días)":
+                        num_days = st.number_input("Número de días de duración:", min_value=1, max_value=365, value=3, step=1)
+                        calculated_end_date = (new_start_d + timedelta(days=int(num_days))).isoformat()
+                        st.caption(f"Vencerá el: **{calculated_end_date}** ({num_days} días).")
                     elif duration_mode == "Fecha límite exacta (calendario)":
-                        exact_d = st.date_input("Fecha de finalización:", min_value=today, value=today + timedelta(days=15))
+                        exact_d = st.date_input("Fecha límite exacta:", min_value=new_start_d, value=new_start_d + timedelta(days=15))
                         calculated_end_date = exact_d.isoformat()
+                    elif duration_mode == "1 Año (Anual)":
+                        calculated_end_date = (new_start_d + timedelta(days=365)).isoformat()
                     else:
                         calculated_end_date = None
                         st.caption("Esta promoción no tiene fecha límite y permanecerá activa indefinidamente.")
 
-                promo_notes = st.text_area("Notas internas o instrucciones de venta:", placeholder="Ej. Aplica solo pago en efectivo o para pacientes de primera vez...")
+                    promo_notes = st.text_area("Notas internas o instrucciones de venta:", placeholder="Ej. Aplica solo pago en efectivo o para pacientes de primera vez...")
 
-                submit_promo = st.form_submit_button("🚀 Crear y Publicar Promoción", type="primary", use_container_width=True)
-                if submit_promo:
-                    if not new_promo_name.strip():
-                        st.error("Por favor ingresa un nombre para la promoción.")
-                    else:
-                        v_type = "permanent" if duration_mode.startswith("Permanente") else "custom_date"
-                        promo_payload = {
-                            "name": new_promo_name.strip(),
-                            "category": new_promo_cat,
-                            "validity_type": v_type,
-                            "end_date": calculated_end_date,
-                            "studies": selected_studies,
-                            "price_regular": float(new_reg_price) if new_reg_price > 0 else None,
-                            "price_promo": float(new_promo_price),
-                            "chopo_equivalent": new_chopo_eq.strip() if new_chopo_eq else "Comparativa abierta",
-                            "notes": promo_notes.strip()
-                        }
-                        add_or_update_promotion(promo_payload)
-                        st.success(f"🎉 Promoción '{new_promo_name}' guardada exitosamente.")
-                        st.rerun()
-
-        # ── Eliminar Promoción Existente ─────────────────────────────────────
-        if promotions:
-            with st.expander("🗑️ Administrar / Eliminar Promociones Existentes", expanded=False):
-                del_opts = {f"{p.get('name')} ({p.get('category')} - {p.get('status_label')})": p.get("id") for p in promotions}
-                selected_del = st.selectbox("Selecciona la promoción que deseas eliminar:", options=list(del_opts.keys()))
-                if st.button("🗑️ Eliminar Promoción Definitivamente", type="secondary"):
-                    promo_id_to_del = del_opts[selected_del]
-                    delete_promotion(promo_id_to_del)
-                    st.toast("Promoción eliminada.")
-                    st.rerun()
+                    submit_promo = st.form_submit_button("🚀 Crear y Publicar Promoción", type="primary", use_container_width=True)
+                    if submit_promo:
+                        if not new_promo_name.strip():
+                            st.error("Por favor ingresa un nombre para la promoción.")
+                        else:
+                            v_type = "permanent" if duration_mode.startswith("Permanente") else "custom_date"
+                            promo_payload = {
+                                "name": new_promo_name.strip(),
+                                "period": new_promo_period.strip(),
+                                "category": new_promo_cat,
+                                "validity_type": v_type,
+                                "start_date": new_start_d.isoformat() if v_type != "permanent" else None,
+                                "end_date": calculated_end_date,
+                                "studies": selected_studies,
+                                "price_regular": float(new_reg_price) if new_reg_price > 0 else None,
+                                "price_promo": float(new_promo_price),
+                                "chopo_equivalent": new_chopo_eq.strip() if new_chopo_eq else "Comparativa abierta",
+                                "notes": promo_notes.strip()
+                            }
+                            add_or_update_promotion(promo_payload)
+                            st.success(f"🎉 Promoción '{new_promo_name}' guardada exitosamente.")
+                            st.rerun()
 
         # ── Cotizador Inteligente de Check-Up + Adicionales (Mejor Tarifa) ──
         st.markdown("---")
         st.markdown("### 🧮 Cotizador Inteligente: Check-Up + Estudios Adicionales")
-        st.caption("Arma una cotización completa para el paciente. El sistema **aplica automáticamente la regla del mejor precio**: si una promoción activa es más barata que el precio adicional, se respeta la promoción; si el precio adicional es menor, aplica el adicional.")
+        st.caption("Arma una cotización completa para el paciente. El sistema **aplica automáticamente la regla del mejor precio**: si una promoción de Octubre o cuatrimestral es más barata que el precio adicional, se respeta la promoción; si el precio adicional es menor, aplica el adicional.")
+
+        # Selector de Tarifas a Considerar
+        qc1, qc2 = st.columns([2, 1])
+        with qc1:
+            cotiz_mode = st.selectbox(
+                "Tarifas promocionales a considerar en la cotización:",
+                [
+                    "🍁 Octubre 2026 + Cuatrimestrales + Permanentes (Inician mañana - RECOMENDADO)",
+                    "🟢 Solo promociones estrictamente vigentes hoy",
+                    "📜 Simular con tarifas históricas de Septiembre 2026",
+                    "📋 Solo precios regulares de catálogo (Sin promociones)"
+                ]
+            )
+        with qc2:
+            st.caption("💡 *Tip comercial:* Cotiza ya con las tarifas de Octubre para pacientes que acudan mañana o programen su cita.")
+
+        inc_upcoming = True
+        target_per = None
+        if cotiz_mode.startswith("🍁"):
+            inc_upcoming = True
+            target_per = None
+        elif cotiz_mode.startswith("🟢"):
+            inc_upcoming = False
+            target_per = None
+        elif cotiz_mode.startswith("📜"):
+            inc_upcoming = False
+            target_per = "Septiembre 2026"
+        elif cotiz_mode.startswith("📋"):
+            inc_upcoming = False
+            target_per = "NINGUNO"
 
         base_pkg_opts = [
             "Check Up Esencial LCM ($549.00)",
@@ -569,7 +749,12 @@ def render_lcm_comparator_tab(chopo_prices: list):
                 s_code = m_info.get("lcm_code", "")
                 p_list = float(m_info.get("lcm_price") or 0.0)
 
-                best_calc = calculate_best_lcm_price(s_code, ad_name, p_list, with_checkup=has_checkup)
+                best_calc = calculate_best_lcm_price(
+                    s_code, ad_name, p_list,
+                    with_checkup=has_checkup,
+                    include_upcoming=inc_upcoming,
+                    target_period=target_per
+                )
                 applied_p = best_calc["best_price"]
                 total_adicionales_lcm += applied_p
 
@@ -687,6 +872,7 @@ def render_lcm_comparator_tab(chopo_prices: list):
                     "🟢 Solo donde LCM es más barato",
                     "🔴 Solo donde Chopo es más barato",
                     "⭐ Estudios con Tarifa Especial Adicional",
+                    "🎁 Estudios en Promoción Activa / Próxima",
                     "✏️ Solo estudios modificados manualmente",
                     "🔎 Sin homólogo en Chopo"
                 ]
@@ -700,6 +886,7 @@ def render_lcm_comparator_tab(chopo_prices: list):
             search_query = st.text_input("Buscar estudio por nombre o clave:", placeholder="Ej. Tiroideo, Glucosa, Vitamina, 842...")
 
         adic_lookup = get_adicionales_lookup()
+        promo_lookup = get_active_promos_lookup(include_upcoming=True)
 
         # Construir DataFrame
         df_rows = []
@@ -712,6 +899,11 @@ def render_lcm_comparator_tab(chopo_prices: list):
             adic_match = adic_lookup.get(code_k) or adic_lookup.get(name_norm)
             p_bundle = adic_match.get("price_bundle") if adic_match else None
 
+            p_promo_info = promo_lookup.get(name_norm)
+            p_promo_val = p_promo_info.get("price") if p_promo_info else None
+            p_promo_name = p_promo_info.get("promo_name") if p_promo_info else None
+            p_promo_per = p_promo_info.get("period") if p_promo_info else None
+
             # Aplicar filtro de veredicto
             if verdict_filter == "🟢 Solo donde LCM es más barato":
                 if diff_m is None or diff_m >= 0:
@@ -721,6 +913,9 @@ def render_lcm_comparator_tab(chopo_prices: list):
                     continue
             elif verdict_filter == "⭐ Estudios con Tarifa Especial Adicional":
                 if p_bundle is None:
+                    continue
+            elif verdict_filter == "🎁 Estudios en Promoción Activa / Próxima":
+                if p_promo_val is None:
                     continue
             elif verdict_filter == "✏️ Solo estudios modificados manualmente":
                 if not is_mod:
@@ -764,6 +959,8 @@ def render_lcm_comparator_tab(chopo_prices: list):
                 "Estudio LCM": m.get("lcm_name", ""),
                 "Precio Lista LCM": m.get("lcm_price"),
                 "Tarifa en Check-Up": p_bundle,
+                "Tarifa Promoción": p_promo_val,
+                "Campaña Promo": f"{p_promo_name} ({p_promo_per})" if p_promo_name else "N/A",
                 "Estudio Chopo Mérida": m.get("chopo_name") or "N/D",
                 "Chopo Web": m.get("chopo_price_web"),
                 "Chopo Mostrador": m.get("chopo_price_list"),
@@ -797,6 +994,7 @@ def render_lcm_comparator_tab(chopo_prices: list):
                 table_df.style.format({
                     "Precio Lista LCM": lambda x: f"${x:,.2f}" if pd.notna(x) else "N/D",
                     "Tarifa en Check-Up": lambda x: f"${x:,.2f}" if pd.notna(x) else "N/A",
+                    "Tarifa Promoción": lambda x: f"${x:,.2f}" if pd.notna(x) else "N/A",
                     "Chopo Web": lambda x: f"${x:,.2f}" if pd.notna(x) else "N/D",
                     "Chopo Mostrador": lambda x: f"${x:,.2f}" if pd.notna(x) else "N/D",
                     "Dif ($)": lambda x: f"${x:+,.2f}" if pd.notna(x) else "N/D",

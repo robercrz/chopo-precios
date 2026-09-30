@@ -16,7 +16,10 @@
     "notes": "Incluye BH, QS 30 y EGO",
     "status": "PERMANENT",
     "status_label": "🔵 Permanente",
-    "days_left": null
+    "days_left": null,
+    "period": "Permanentes",
+    "start_date": "2025-01-01",
+    "institution": "PROMPERM / PROMOCIONES PERMANENTES"
   },
   {
     "id": "promo_avanzado",
@@ -35,7 +38,10 @@
     "notes": "Incluye BH, QS 40 y EGO",
     "status": "PERMANENT",
     "status_label": "🔵 Permanente",
-    "days_left": null
+    "days_left": null,
+    "period": "Permanentes",
+    "start_date": "2025-01-01",
+    "institution": "PROMPERM / PROMOCIONES PERMANENTES"
   },
   {
     "id": "promo_integral_plus",
@@ -54,7 +60,10 @@
     "notes": "Incluye BH, QS 50 c/ Hemoglobina Glicosilada y EGO",
     "status": "PERMANENT",
     "status_label": "🔵 Permanente",
-    "days_left": null
+    "days_left": null,
+    "period": "Permanentes",
+    "start_date": "2025-01-01",
+    "institution": "PROMPERM / PROMOCIONES PERMANENTES"
   },
   {
     "id": "promo_inicial",
@@ -73,7 +82,10 @@
     "notes": "Paquete básico para chequeo general",
     "status": "PERMANENT",
     "status_label": "🔵 Permanente",
-    "days_left": null
+    "days_left": null,
+    "period": "Permanentes",
+    "start_date": "2025-01-01",
+    "institution": "PROMPERM / PROMOCIONES PERMANENTES"
   },
   {
     "id": "promo_tiroideo_esencial",
@@ -145,5 +157,323 @@
     "status": "PERMANENT",
     "status_label": "🔵 Permanente",
     "days_left": null
+  },
+  {
+    "id": "promo_cuat_tiroideo",
+    "name": "Check Up Tiroideo Esencial",
+    "category": "Promo Cuatrimestral",
+    "period": "Cuatrimestre Sep - Dic 2026",
+    "institution": "PAQUETES CUATRIMESTRALES",
+    "validity_type": "custom_date",
+    "start_date": "2026-09-01",
+    "end_date": "2026-12-31",
+    "studies": [
+      "Perfil tiroideo completo",
+      "Biometría hemática",
+      "Química Sanguínea (30 elementos)",
+      "Examen general de orina"
+    ],
+    "price_regular": 1433.0,
+    "price_promo": 1050.0,
+    "chopo_equivalent": "CHECK UP BÁSICO TIROIDEO QUÍMICA DE 45 ELEMENTOS",
+    "notes": "Perfil tiroideo completo + Check Up Esencial (Vence 31 dic 2026)",
+    "days_left": 92,
+    "status": "ACTIVE",
+    "status_label": "🟢 Activa (vence 31/12/2026)"
+  },
+  {
+    "id": "promo_cuat_vitamina_d",
+    "name": "Check Up Esencial + Vitamina D",
+    "category": "Promo Cuatrimestral",
+    "period": "Cuatrimestre Sep - Dic 2026",
+    "institution": "PAQUETES CUATRIMESTRALES",
+    "validity_type": "custom_date",
+    "start_date": "2026-09-01",
+    "end_date": "2026-12-31",
+    "studies": [
+      "Biometría hemática",
+      "Química Sanguínea (30 elementos)",
+      "Examen general de orina",
+      "Vitamina D (25-OH) total"
+    ],
+    "price_regular": 1433.0,
+    "price_promo": 1100.0,
+    "chopo_equivalent": "CHECK UP BÁSICO Q45 + VITAMINA D",
+    "notes": "Check Up Esencial con Vitamina D incluida (Vence 31 dic 2026)",
+    "days_left": 92,
+    "status": "ACTIVE",
+    "status_label": "🟢 Activa (vence 31/12/2026)"
+  },
+  {
+    "id": "promo_cuat_vitd_indiv",
+    "name": "Vitamina D (25-OH) Total",
+    "category": "Promo Cuatrimestral",
+    "period": "Cuatrimestre Sep - Dic 2026",
+    "institution": "PAQUETES CUATRIMESTRALES",
+    "validity_type": "custom_date",
+    "start_date": "2026-09-01",
+    "end_date": "2026-12-31",
+    "studies": [
+      "Vitamina D (25-OH) total"
+    ],
+    "price_regular": 690.0,
+    "price_promo": 640.0,
+    "chopo_equivalent": "25 HIDROXI VITAMINA D TOTAL (CALCIFEROL)",
+    "notes": "Precio promocional cuatrimestral (Vence 31 dic 2026)",
+    "days_left": 92,
+    "status": "ACTIVE",
+    "status_label": "🟢 Activa (vence 31/12/2026)"
+  },
+  {
+    "id": "promo_cuat_rayos_x",
+    "name": "Rayos X (50% de Descuento)",
+    "category": "Promo Cuatrimestral",
+    "period": "Cuatrimestre Sep - Dic 2026",
+    "institution": "PAQUETES CUATRIMESTRALES",
+    "validity_type": "custom_date",
+    "start_date": "2026-09-01",
+    "end_date": "2026-12-31",
+    "studies": [
+      "Rayos X tórax PA"
+    ],
+    "price_regular": 690.0,
+    "price_promo": 345.0,
+    "chopo_equivalent": "TELE DE TORAX O RADIOGRAFIA TORAX PA",
+    "notes": "50% de descuento en el resto de Rayos X al cotizar o preguntar (Vence 31 dic 2026)",
+    "days_left": 92,
+    "status": "ACTIVE",
+    "status_label": "🟢 Activa (vence 31/12/2026)"
+  },
+  {
+    "id": "promo_oct_perfil_tiroideo",
+    "name": "Perfil Tiroideo Completo",
+    "category": "Promo del Mes",
+    "period": "Octubre 2026",
+    "institution": "PROMOMES",
+    "validity_type": "custom_date",
+    "start_date": "2026-10-01",
+    "end_date": "2026-10-31",
+    "studies": [
+      "Perfil tiroideo completo"
+    ],
+    "price_regular": 690.0,
+    "price_promo": 590.0,
+    "chopo_equivalent": "PERFIL TIROIDEO",
+    "notes": "Promoción mensual de Octubre 2026 (Inicia mañana 1 Oct)",
+    "status": "UPCOMING",
+    "days_until_start": 1,
+    "status_label": "🟡 Inicia Mañana (01/10/2026)",
+    "days_left": 31
+  },
+  {
+    "id": "promo_oct_perfil_femenino",
+    "name": "Perfil Hormonal Femenino",
+    "category": "Promo del Mes",
+    "period": "Octubre 2026",
+    "institution": "PROMOMES",
+    "validity_type": "custom_date",
+    "start_date": "2026-10-01",
+    "end_date": "2026-10-31",
+    "studies": [
+      "Perfil hormonal femenino"
+    ],
+    "price_regular": 1090.0,
+    "price_promo": 980.0,
+    "chopo_equivalent": "PERFIL HORMONAL",
+    "notes": "Ginecológico completo del mes de Octubre (Inicia 1 Oct)",
+    "status": "UPCOMING",
+    "days_until_start": 1,
+    "status_label": "🟡 Inicia Mañana (01/10/2026)",
+    "days_left": 31
+  },
+  {
+    "id": "promo_oct_us_mama",
+    "name": "Ultrasonido de mama",
+    "category": "Promo del Mes",
+    "period": "Octubre 2026",
+    "institution": "PROMOMES",
+    "validity_type": "custom_date",
+    "start_date": "2026-10-01",
+    "end_date": "2026-10-31",
+    "studies": [
+      "Ultrasonido de mama"
+    ],
+    "price_regular": 1021.0,
+    "price_promo": 899.0,
+    "chopo_equivalent": "ULTRASONIDO MAMARIO",
+    "notes": "Mes Rosa / Cáncer de Mama (Inicia 1 Oct)",
+    "status": "UPCOMING",
+    "days_until_start": 1,
+    "status_label": "🟡 Inicia Mañana (01/10/2026)",
+    "days_left": 31
+  },
+  {
+    "id": "promo_oct_ca153",
+    "name": "ANTÍGENO CARBOHIDRATO 15-3 (CA 15-3)",
+    "category": "Promo del Mes",
+    "period": "Octubre 2026",
+    "institution": "PROMOMES",
+    "validity_type": "custom_date",
+    "start_date": "2026-10-01",
+    "end_date": "2026-10-31",
+    "studies": [
+      "ANTÍGENO CARBOHIDRATO 15-3 (CA 15-3)"
+    ],
+    "price_regular": 696.0,
+    "price_promo": 590.0,
+    "chopo_equivalent": "ANTIGENO CA 15-3",
+    "notes": "Marcador tumoral de mama en descuento (de $696 a $590)",
+    "status": "UPCOMING",
+    "days_until_start": 1,
+    "status_label": "🟡 Inicia Mañana (01/10/2026)",
+    "days_left": 31
+  },
+  {
+    "id": "promo_oct_ca125",
+    "name": "ANTÍGENO CARBOHIDRATO 125 (CA-125)",
+    "category": "Promo del Mes",
+    "period": "Octubre 2026",
+    "institution": "PROMOMES",
+    "validity_type": "custom_date",
+    "start_date": "2026-10-01",
+    "end_date": "2026-10-31",
+    "studies": [
+      "ANTÍGENO CARBOHIDRATO 125 (CA-125)"
+    ],
+    "price_regular": 696.0,
+    "price_promo": 590.0,
+    "chopo_equivalent": "ANTIGENO CA 125",
+    "notes": "Marcador tumoral ovárico en descuento (de $696 a $590)",
+    "status": "UPCOMING",
+    "days_until_start": 1,
+    "status_label": "🟡 Inicia Mañana (01/10/2026)",
+    "days_left": 31
+  },
+  {
+    "id": "promo_oct_cumple",
+    "name": "Cumpleañeros del Mes de Octubre",
+    "category": "Promo del Mes",
+    "period": "Octubre 2026",
+    "institution": "PROMOMES",
+    "validity_type": "custom_date",
+    "start_date": "2026-10-01",
+    "end_date": "2026-10-31",
+    "studies": [
+      "Check Up Esencial",
+      "Checkup Avanzado"
+    ],
+    "price_regular": 549.0,
+    "price_promo": 466.65,
+    "chopo_equivalent": "DESCUENTO DE CUMPLEAÑOS CHOPO",
+    "notes": "15% de descuento en el sistema para cumpleañeros de Octubre",
+    "status": "UPCOMING",
+    "days_until_start": 1,
+    "status_label": "🟡 Inicia Mañana (01/10/2026)",
+    "days_left": 31
+  },
+  {
+    "id": "promo_hist_sep_patrio",
+    "name": "Check Up Fiestas Patrias",
+    "category": "Histórico / Concluida",
+    "period": "Septiembre 2026",
+    "institution": "HISTORICO_LCM",
+    "validity_type": "custom_date",
+    "start_date": "2026-09-01",
+    "end_date": "2026-09-30",
+    "studies": [
+      "Biometría hemática",
+      "Química Sanguínea (24 elementos)",
+      "Examen general de orina"
+    ],
+    "price_regular": 820.0,
+    "price_promo": 599.0,
+    "chopo_equivalent": "CHECK UP FIESTAS PATRIAS",
+    "notes": "Campaña Mes Patrio (Finalizada el 30/09/2026)",
+    "is_archived": true,
+    "status": "ARCHIVED",
+    "status_label": "📜 Histórico (Concluida 2026-09-30)"
+  },
+  {
+    "id": "promo_hist_sep_hepatico",
+    "name": "Perfil Hepático Completo",
+    "category": "Histórico / Concluida",
+    "period": "Septiembre 2026",
+    "institution": "HISTORICO_LCM",
+    "validity_type": "custom_date",
+    "start_date": "2026-09-01",
+    "end_date": "2026-09-30",
+    "studies": [
+      "Perfil hepático"
+    ],
+    "price_regular": 640.0,
+    "price_promo": 490.0,
+    "chopo_equivalent": "PRUEBAS DE FUNCIONAMIENTO HEPATICO",
+    "notes": "Campaña de Salud Hepática de Septiembre",
+    "is_archived": true,
+    "status": "ARCHIVED",
+    "status_label": "📜 Histórico (Concluida 2026-09-30)"
+  },
+  {
+    "id": "promo_hist_sep_psa",
+    "name": "Antígeno Prostático Específico (PSA)",
+    "category": "Histórico / Concluida",
+    "period": "Septiembre 2026",
+    "institution": "HISTORICO_LCM",
+    "validity_type": "custom_date",
+    "start_date": "2026-09-01",
+    "end_date": "2026-09-30",
+    "studies": [
+      "Antígeno prostático específico (PSA) total"
+    ],
+    "price_regular": 480.0,
+    "price_promo": 390.0,
+    "chopo_equivalent": "ANTIGENO PROSTATICO TOTAL",
+    "notes": "Mes de prevención masculina Septiembre",
+    "is_archived": true,
+    "status": "ARCHIVED",
+    "status_label": "📜 Histórico (Concluida 2026-09-30)"
+  },
+  {
+    "id": "promo_hist_ago_escolar",
+    "name": "Check Up Escolar / Pediátrico",
+    "category": "Histórico / Concluida",
+    "period": "Agosto 2026",
+    "institution": "HISTORICO_LCM",
+    "validity_type": "custom_date",
+    "start_date": "2026-08-01",
+    "end_date": "2026-08-31",
+    "studies": [
+      "Biometría hemática",
+      "Grupo sanguíneo y factor Rh",
+      "Examen general de orina",
+      "Coproparasitoscópico (1)"
+    ],
+    "price_regular": 550.0,
+    "price_promo": 380.0,
+    "chopo_equivalent": "CERTIFICADO MEDICO ESCOLAR",
+    "notes": "Campaña Regreso a Clases Agosto 2026",
+    "is_archived": true,
+    "status": "ARCHIVED",
+    "status_label": "📜 Histórico (Concluida 2026-08-31)"
+  },
+  {
+    "id": "promo_hist_ago_exudado",
+    "name": "Exudado Faríngeo con Antibiograma",
+    "category": "Histórico / Concluida",
+    "period": "Agosto 2026",
+    "institution": "HISTORICO_LCM",
+    "validity_type": "custom_date",
+    "start_date": "2026-08-01",
+    "end_date": "2026-08-31",
+    "studies": [
+      "Cultivo exudado faríngeo"
+    ],
+    "price_regular": 420.0,
+    "price_promo": 320.0,
+    "chopo_equivalent": "EXUDADO FARINGEO",
+    "notes": "Detección de infecciones respiratorias infantiles",
+    "is_archived": true,
+    "status": "ARCHIVED",
+    "status_label": "📜 Histórico (Concluida 2026-08-31)"
   }
 ]

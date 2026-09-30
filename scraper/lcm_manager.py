@@ -85,17 +85,38 @@ def delete_price_override(study_key: str) -> bool:
 
 # ── 2. GESTOR DE PAQUETES Y PROMOCIONES CON VIGENCIA ──────────────────────────
 
+# ── 2. GESTOR DE PAQUETES Y PROMOCIONES CON VIGENCIA E HISTORIAL ───────────────
+
 def load_promotions() -> List[Dict[str, Any]]:
-    """Carga la lista de paquetes y promociones con vigencia."""
+    """Carga la lista de paquetes y promociones con vigencia y estado actualizado."""
     ensure_dirs()
     if not PROMOTIONS_FILE.exists():
-        # Inicializar con promociones de octubre por defecto si no existe
         init_promos = _get_default_october_promotions()
         save_all_promotions(init_promos)
         return init_promos
     try:
         with open(PROMOTIONS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            promos = json.load(f)
+            # Asegurar que siempre contenga los periodos e IDs oficiales
+            p_ids = {p.get("id") for p in promos}
+            defaults = _get_default_october_promotions()
+            added = False
+            for d in defaults:
+                if d["id"] not in p_ids:
+                    promos.append(d)
+                    added = True
+                else:
+                    # Actualizar fechas y periodos oficiales si no los tenían o estaban desfasados
+                    idx = next(i for i, p in enumerate(promos) if p.get("id") == d["id"])
+                    for field in ("period", "start_date", "end_date", "category", "institution", "notes"):
+                        if field in d and (field not in promos[idx] or promos[idx].get(field) is None or promos[idx].get("end_date") == "2026-09-30"):
+                            promos[idx][field] = d[field]
+                            added = True
+            for p in promos:
+                evaluate_promo_validity(p)
+            if added:
+                save_all_promotions(promos)
+            return promos
     except Exception:
         return []
 
@@ -111,7 +132,7 @@ def save_all_promotions(promos: List[Dict[str, Any]]) -> bool:
 
 
 def add_or_update_promotion(promo_data: Dict[str, Any]) -> bool:
-    """Crea o actualiza una promoción con cálculo de plazos y vigencia."""
+    """Crea o actualiza una promoción con cálculo de plazos, período y vigencia."""
     promos = load_promotions()
     p_id = promo_data.get("id") or f"promo_{int(datetime.now().timestamp())}"
     promo_data["id"] = p_id
@@ -135,51 +156,168 @@ def delete_promotion(promo_id: str) -> bool:
     return save_all_promotions(filtered)
 
 
+def archive_promotion(promo_id: str) -> bool:
+    """Envía una promoción al archivo histórico sin eliminarla."""
+    promos = load_promotions()
+    found = False
+    for p in promos:
+        if p.get("id") == promo_id:
+            p["is_archived"] = True
+            evaluate_promo_validity(p)
+            found = True
+            break
+    if found:
+        return save_all_promotions(promos)
+    return False
+
+
+def unarchive_promotion(promo_id: str) -> bool:
+    """Restaura una promoción archivada a activa/programada."""
+    promos = load_promotions()
+    found = False
+    for p in promos:
+        if p.get("id") == promo_id:
+            p["is_archived"] = False
+            evaluate_promo_validity(p)
+            found = True
+            break
+    if found:
+        return save_all_promotions(promos)
+    return False
+
+
 def evaluate_promo_validity(promo: Dict[str, Any]) -> Dict[str, Any]:
-    """Calcula si la promoción está Activa, Por Vencer o Vencida según la fecha actual."""
-    validity_type = promo.get("validity_type", "permanent")  # permanent, days, month_end, custom_date
+    """
+    Calcula si la promoción está:
+    - ARCHIVED: Archivada en histórico
+    - PERMANENT: Vigencia permanente sin fecha límite
+    - UPCOMING: Programada a iniciar en el futuro (ej. Octubre que inicia mañana 1 Oct)
+    - ACTIVE: Vigente hoy
+    - EXPIRING_SOON: Por vencer en 3 días o menos
+    - EXPIRED: Vencida / Período anterior concluido
+    """
+    if promo.get("is_archived"):
+        promo["status"] = "ARCHIVED"
+        end_str = promo.get("end_date", "")
+        promo["status_label"] = f"📜 Histórico (Concluida {end_str})" if end_str else "📜 Archivado en Histórico"
+        return promo
+
+    validity_type = promo.get("validity_type", "permanent")
+    start_date_str = promo.get("start_date")
     end_date_str = promo.get("end_date")
     today = date.today()
 
-    if validity_type == "permanent" or not end_date_str:
+    if validity_type == "permanent" or (not end_date_str and not start_date_str):
         promo["status"] = "PERMANENT"
         promo["status_label"] = "🔵 Permanente"
         promo["days_left"] = None
         return promo
 
-    try:
-        end_d = date.fromisoformat(end_date_str)
-        delta = (end_d - today).days
+    # 1. Validar fecha de inicio si está en el futuro
+    if start_date_str:
+        try:
+            start_d = date.fromisoformat(start_date_str)
+            if today < start_d:
+                delta_start = (start_d - today).days
+                promo["status"] = "UPCOMING"
+                promo["days_until_start"] = delta_start
+                if delta_start == 1:
+                    promo["status_label"] = f"🟡 Inicia Mañana (01/{start_d.strftime('%m/%Y')})"
+                else:
+                    promo["status_label"] = f"🟡 Inicia en {delta_start} días ({start_d.strftime('%d/%m/%Y')})"
+                if end_date_str:
+                    promo["days_left"] = (date.fromisoformat(end_date_str) - today).days
+                return promo
+        except Exception:
+            pass
 
-        promo["days_left"] = delta
-        if delta < 0:
-            promo["status"] = "EXPIRED"
-            promo["status_label"] = f"🔴 Vencida hace {abs(delta)} días"
-        elif delta <= 3:
-            promo["status"] = "EXPIRING_SOON"
-            promo["status_label"] = f"🟠 Por vencer ({delta} día{'s' if delta != 1 else ''})"
-        else:
-            promo["status"] = "ACTIVE"
-            promo["status_label"] = f"🟢 Activa (vence {end_d.strftime('%d/%m/%Y')})"
-    except Exception:
-        promo["status"] = "UNKNOWN"
-        promo["status_label"] = "⚪ Sin fecha válida"
+    # 2. Validar fecha de fin
+    if end_date_str:
+        try:
+            end_d = date.fromisoformat(end_date_str)
+            delta = (end_d - today).days
+            promo["days_left"] = delta
+            if delta < 0:
+                promo["status"] = "EXPIRED"
+                promo["status_label"] = f"🔴 Finalizada ({end_d.strftime('%d/%m/%Y')})"
+            elif delta <= 3:
+                promo["status"] = "EXPIRING_SOON"
+                promo["status_label"] = f"🟠 Por vencer ({delta} día{'s' if delta != 1 else ''})"
+            else:
+                promo["status"] = "ACTIVE"
+                promo["status_label"] = f"🟢 Activa (vence {end_d.strftime('%d/%m/%Y')})"
+        except Exception:
+            promo["status"] = "UNKNOWN"
+            promo["status_label"] = "⚪ Sin fecha válida"
+    else:
+        promo["status"] = "PERMANENT"
+        promo["status_label"] = "🔵 Permanente"
 
     return promo
 
 
-def _get_default_october_promotions() -> List[Dict[str, Any]]:
-    """Promociones base extraídas del archivo de promociones de Octubre."""
-    today = date.today()
-    end_of_month = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
-    eom_str = end_of_month.isoformat()
+def get_available_periods() -> List[str]:
+    """Retorna los periodos o campañas presentes en la base de promociones e histórico."""
+    promos = load_promotions()
+    periods = []
+    for p in promos:
+        per = p.get("period")
+        if per and per not in periods:
+            periods.append(per)
+    priority = [
+        "Octubre 2026",
+        "Cuatrimestre Sep - Dic 2026",
+        "Permanentes",
+        "Septiembre 2026",
+        "Agosto 2026"
+    ]
+    ordered = [p for p in priority if p in periods] + [p for p in periods if p not in priority]
+    return ordered
 
+
+def get_study_price_history(study_name: str) -> List[Dict[str, Any]]:
+    """Obtiene el historial de precios y promociones de un estudio a través de distintos períodos."""
+    promos = load_promotions()
+    norm_target = clean_medical_text(study_name)
+    history = []
+    for p in promos:
+        p_name = p.get("name", "")
+        studies = p.get("studies", [])
+        matched = False
+        if fuzz.token_sort_ratio(norm_target, clean_medical_text(p_name)) >= 85:
+            matched = True
+        else:
+            for s in studies:
+                if fuzz.token_sort_ratio(norm_target, clean_medical_text(s)) >= 85:
+                    matched = True
+                    break
+        if matched:
+            history.append({
+                "period": p.get("period", "General"),
+                "promo_name": p_name,
+                "price": p.get("price_promo"),
+                "price_regular": p.get("price_regular"),
+                "category": p.get("category"),
+                "status": p.get("status"),
+                "status_label": p.get("status_label"),
+                "start_date": p.get("start_date"),
+                "end_date": p.get("end_date")
+            })
+    return history
+
+
+def _get_default_october_promotions() -> List[Dict[str, Any]]:
+    """Promociones oficiales extraídas del archivo de promociones de LCM con periodos e histórico."""
     base = [
+        # === 1. PROMOCIONES PERMANENTES ===
         {
             "id": "promo_esencial",
             "name": "Check Up Esencial",
             "category": "Promo Permanente",
+            "period": "Permanentes",
+            "institution": "PROMPERM / PROMOCIONES PERMANENTES",
             "validity_type": "permanent",
+            "start_date": "2025-01-01",
             "end_date": None,
             "studies": ["Biometría hemática", "Química Sanguínea (30 elementos)", "Examen general de orina"],
             "price_regular": 750.0,
@@ -191,7 +329,10 @@ def _get_default_october_promotions() -> List[Dict[str, Any]]:
             "id": "promo_avanzado",
             "name": "Checkup Avanzado",
             "category": "Promo Permanente",
+            "period": "Permanentes",
+            "institution": "PROMPERM / PROMOCIONES PERMANENTES",
             "validity_type": "permanent",
+            "start_date": "2025-01-01",
             "end_date": None,
             "studies": ["Biometría hemática", "Química Sanguínea (40 elementos)", "Examen general de orina"],
             "price_regular": 1150.0,
@@ -203,7 +344,10 @@ def _get_default_october_promotions() -> List[Dict[str, Any]]:
             "id": "promo_integral_plus",
             "name": "Checkup Integral Plus",
             "category": "Promo Permanente",
+            "period": "Permanentes",
+            "institution": "PROMPERM / PROMOCIONES PERMANENTES",
             "validity_type": "permanent",
+            "start_date": "2025-01-01",
             "end_date": None,
             "studies": ["Biometría hemática", "Química Sanguínea de 50 elementos c/ HbA1c", "Examen general de orina"],
             "price_regular": 1450.0,
@@ -215,7 +359,10 @@ def _get_default_october_promotions() -> List[Dict[str, Any]]:
             "id": "promo_inicial",
             "name": "Check Up Inicial",
             "category": "Promo Permanente",
+            "period": "Permanentes",
+            "institution": "PROMPERM / PROMOCIONES PERMANENTES",
             "validity_type": "permanent",
+            "start_date": "2025-01-01",
             "end_date": None,
             "studies": ["Biometría hemática", "Química Sanguínea (6 elementos)", "Examen general de orina"],
             "price_regular": 620.0,
@@ -223,54 +370,244 @@ def _get_default_october_promotions() -> List[Dict[str, Any]]:
             "chopo_equivalent": "QUÍMICA 6 + BIOMETRÍA + EGO",
             "notes": "Paquete básico para chequeo general"
         },
+
+        # === 2. PROMOCIONES CUATRIMESTRALES (Vencen 31 de Diciembre) ===
         {
-            "id": "promo_tiroideo_esencial",
+            "id": "promo_cuat_tiroideo",
             "name": "Check Up Tiroideo Esencial",
             "category": "Promo Cuatrimestral",
+            "period": "Cuatrimestre Sep - Dic 2026",
+            "institution": "PAQUETES CUATRIMESTRALES",
             "validity_type": "custom_date",
+            "start_date": "2026-09-01",
             "end_date": "2026-12-31",
             "studies": ["Perfil tiroideo completo", "Biometría hemática", "Química Sanguínea (30 elementos)", "Examen general de orina"],
             "price_regular": 1433.0,
             "price_promo": 1050.0,
             "chopo_equivalent": "CHECK UP BÁSICO TIROIDEO QUÍMICA DE 45 ELEMENTOS",
-            "notes": "Perfil tiroideo completo + Check Up Esencial"
+            "notes": "Perfil tiroideo completo + Check Up Esencial (Vence 31 dic 2026)"
         },
         {
-            "id": "promo_perfil_tiroideo",
-            "name": "Perfil Tiroideo Completo",
-            "category": "Promo del Mes",
+            "id": "promo_cuat_vitamina_d",
+            "name": "Check Up Esencial + Vitamina D",
+            "category": "Promo Cuatrimestral",
+            "period": "Cuatrimestre Sep - Dic 2026",
+            "institution": "PAQUETES CUATRIMESTRALES",
             "validity_type": "custom_date",
-            "end_date": eom_str,
-            "studies": ["Perfil tiroideo completo"],
-            "price_regular": 690.0,
-            "price_promo": 590.0,
-            "chopo_equivalent": "PERFIL TIROIDEO",
-            "notes": "Descuento especial de temporada"
+            "start_date": "2026-09-01",
+            "end_date": "2026-12-31",
+            "studies": ["Biometría hemática", "Química Sanguínea (30 elementos)", "Examen general de orina", "Vitamina D (25-OH) total"],
+            "price_regular": 1433.0,
+            "price_promo": 1100.0,
+            "chopo_equivalent": "CHECK UP BÁSICO Q45 + VITAMINA D",
+            "notes": "Check Up Esencial con Vitamina D incluida (Vence 31 dic 2026)"
         },
         {
-            "id": "promo_perfil_femenino",
-            "name": "Perfil Hormonal Femenino",
-            "category": "Promo del Mes",
-            "validity_type": "custom_date",
-            "end_date": eom_str,
-            "studies": ["Perfil hormonal femenino"],
-            "price_regular": 1090.0,
-            "price_promo": 980.0,
-            "chopo_equivalent": "PERFIL HORMONAL",
-            "notes": "Ginecológico completo"
-        },
-        {
-            "id": "promo_vitamina_d",
+            "id": "promo_cuat_vitd_indiv",
             "name": "Vitamina D (25-OH) Total",
-            "category": "Promo Especial",
-            "validity_type": "permanent",
-            "end_date": None,
+            "category": "Promo Cuatrimestral",
+            "period": "Cuatrimestre Sep - Dic 2026",
+            "institution": "PAQUETES CUATRIMESTRALES",
+            "validity_type": "custom_date",
+            "start_date": "2026-09-01",
+            "end_date": "2026-12-31",
             "studies": ["Vitamina D (25-OH) total"],
             "price_regular": 690.0,
             "price_promo": 640.0,
             "chopo_equivalent": "25 HIDROXI VITAMINA D TOTAL (CALCIFEROL)",
-            "notes": "Precio en paquete o adicional"
+            "notes": "Precio promocional cuatrimestral (Vence 31 dic 2026)"
         },
+        {
+            "id": "promo_cuat_rayos_x",
+            "name": "Rayos X (50% de Descuento)",
+            "category": "Promo Cuatrimestral",
+            "period": "Cuatrimestre Sep - Dic 2026",
+            "institution": "PAQUETES CUATRIMESTRALES",
+            "validity_type": "custom_date",
+            "start_date": "2026-09-01",
+            "end_date": "2026-12-31",
+            "studies": ["Rayos X tórax PA"],
+            "price_regular": 690.0,
+            "price_promo": 345.0,
+            "chopo_equivalent": "TELE DE TORAX O RADIOGRAFIA TORAX PA",
+            "notes": "50% de descuento en el resto de Rayos X al cotizar o preguntar (Vence 31 dic 2026)"
+        },
+
+        # === 3. PROMOCIONES MENSUALES DE OCTUBRE (Inician 1 Oct - Vencen 31 Oct) ===
+        {
+            "id": "promo_oct_perfil_tiroideo",
+            "name": "Perfil Tiroideo Completo",
+            "category": "Promo del Mes",
+            "period": "Octubre 2026",
+            "institution": "PROMOMES",
+            "validity_type": "custom_date",
+            "start_date": "2026-10-01",
+            "end_date": "2026-10-31",
+            "studies": ["Perfil tiroideo completo"],
+            "price_regular": 690.0,
+            "price_promo": 590.0,
+            "chopo_equivalent": "PERFIL TIROIDEO",
+            "notes": "Promoción mensual de Octubre 2026 (Inicia mañana 1 Oct)"
+        },
+        {
+            "id": "promo_oct_perfil_femenino",
+            "name": "Perfil Hormonal Femenino",
+            "category": "Promo del Mes",
+            "period": "Octubre 2026",
+            "institution": "PROMOMES",
+            "validity_type": "custom_date",
+            "start_date": "2026-10-01",
+            "end_date": "2026-10-31",
+            "studies": ["Perfil hormonal femenino"],
+            "price_regular": 1090.0,
+            "price_promo": 980.0,
+            "chopo_equivalent": "PERFIL HORMONAL",
+            "notes": "Ginecológico completo del mes de Octubre (Inicia 1 Oct)"
+        },
+        {
+            "id": "promo_oct_us_mama",
+            "name": "Ultrasonido de mama",
+            "category": "Promo del Mes",
+            "period": "Octubre 2026",
+            "institution": "PROMOMES",
+            "validity_type": "custom_date",
+            "start_date": "2026-10-01",
+            "end_date": "2026-10-31",
+            "studies": ["Ultrasonido de mama"],
+            "price_regular": 1021.0,
+            "price_promo": 899.0,
+            "chopo_equivalent": "ULTRASONIDO MAMARIO",
+            "notes": "Mes Rosa / Cáncer de Mama (Inicia 1 Oct)"
+        },
+        {
+            "id": "promo_oct_ca153",
+            "name": "ANTÍGENO CARBOHIDRATO 15-3 (CA 15-3)",
+            "category": "Promo del Mes",
+            "period": "Octubre 2026",
+            "institution": "PROMOMES",
+            "validity_type": "custom_date",
+            "start_date": "2026-10-01",
+            "end_date": "2026-10-31",
+            "studies": ["ANTÍGENO CARBOHIDRATO 15-3 (CA 15-3)"],
+            "price_regular": 696.0,
+            "price_promo": 590.0,
+            "chopo_equivalent": "ANTIGENO CA 15-3",
+            "notes": "Marcador tumoral de mama en descuento (de $696 a $590)"
+        },
+        {
+            "id": "promo_oct_ca125",
+            "name": "ANTÍGENO CARBOHIDRATO 125 (CA-125)",
+            "category": "Promo del Mes",
+            "period": "Octubre 2026",
+            "institution": "PROMOMES",
+            "validity_type": "custom_date",
+            "start_date": "2026-10-01",
+            "end_date": "2026-10-31",
+            "studies": ["ANTÍGENO CARBOHIDRATO 125 (CA-125)"],
+            "price_regular": 696.0,
+            "price_promo": 590.0,
+            "chopo_equivalent": "ANTIGENO CA 125",
+            "notes": "Marcador tumoral ovárico en descuento (de $696 a $590)"
+        },
+        {
+            "id": "promo_oct_cumple",
+            "name": "Cumpleañeros del Mes de Octubre",
+            "category": "Promo del Mes",
+            "period": "Octubre 2026",
+            "institution": "PROMOMES",
+            "validity_type": "custom_date",
+            "start_date": "2026-10-01",
+            "end_date": "2026-10-31",
+            "studies": ["Check Up Esencial", "Checkup Avanzado"],
+            "price_regular": 549.0,
+            "price_promo": 466.65,
+            "chopo_equivalent": "DESCUENTO DE CUMPLEAÑOS CHOPO",
+            "notes": "15% de descuento en el sistema para cumpleañeros de Octubre"
+        },
+
+        # === 4. HISTÓRICO: SEPTIEMBRE 2026 (Finalizado 30 de Septiembre) ===
+        {
+            "id": "promo_hist_sep_patrio",
+            "name": "Check Up Fiestas Patrias",
+            "category": "Histórico / Concluida",
+            "period": "Septiembre 2026",
+            "institution": "HISTORICO_LCM",
+            "validity_type": "custom_date",
+            "start_date": "2026-09-01",
+            "end_date": "2026-09-30",
+            "studies": ["Biometría hemática", "Química Sanguínea (24 elementos)", "Examen general de orina"],
+            "price_regular": 820.0,
+            "price_promo": 599.0,
+            "chopo_equivalent": "CHECK UP FIESTAS PATRIAS",
+            "notes": "Campaña Mes Patrio (Finalizada el 30/09/2026)",
+            "is_archived": True
+        },
+        {
+            "id": "promo_hist_sep_hepatico",
+            "name": "Perfil Hepático Completo",
+            "category": "Histórico / Concluida",
+            "period": "Septiembre 2026",
+            "institution": "HISTORICO_LCM",
+            "validity_type": "custom_date",
+            "start_date": "2026-09-01",
+            "end_date": "2026-09-30",
+            "studies": ["Perfil hepático"],
+            "price_regular": 640.0,
+            "price_promo": 490.0,
+            "chopo_equivalent": "PRUEBAS DE FUNCIONAMIENTO HEPATICO",
+            "notes": "Campaña de Salud Hepática de Septiembre",
+            "is_archived": True
+        },
+        {
+            "id": "promo_hist_sep_psa",
+            "name": "Antígeno Prostático Específico (PSA)",
+            "category": "Histórico / Concluida",
+            "period": "Septiembre 2026",
+            "institution": "HISTORICO_LCM",
+            "validity_type": "custom_date",
+            "start_date": "2026-09-01",
+            "end_date": "2026-09-30",
+            "studies": ["Antígeno prostático específico (PSA) total"],
+            "price_regular": 480.0,
+            "price_promo": 390.0,
+            "chopo_equivalent": "ANTIGENO PROSTATICO TOTAL",
+            "notes": "Mes de prevención masculina Septiembre",
+            "is_archived": True
+        },
+
+        # === 5. HISTÓRICO: AGOSTO 2026 (Finalizado 31 de Agosto) ===
+        {
+            "id": "promo_hist_ago_escolar",
+            "name": "Check Up Escolar / Pediátrico",
+            "category": "Histórico / Concluida",
+            "period": "Agosto 2026",
+            "institution": "HISTORICO_LCM",
+            "validity_type": "custom_date",
+            "start_date": "2026-08-01",
+            "end_date": "2026-08-31",
+            "studies": ["Biometría hemática", "Grupo sanguíneo y factor Rh", "Examen general de orina", "Coproparasitoscópico (1)"],
+            "price_regular": 550.0,
+            "price_promo": 380.0,
+            "chopo_equivalent": "CERTIFICADO MEDICO ESCOLAR",
+            "notes": "Campaña Regreso a Clases Agosto 2026",
+            "is_archived": True
+        },
+        {
+            "id": "promo_hist_ago_exudado",
+            "name": "Exudado Faríngeo con Antibiograma",
+            "category": "Histórico / Concluida",
+            "period": "Agosto 2026",
+            "institution": "HISTORICO_LCM",
+            "validity_type": "custom_date",
+            "start_date": "2026-08-01",
+            "end_date": "2026-08-31",
+            "studies": ["Cultivo exudado faríngeo"],
+            "price_regular": 420.0,
+            "price_promo": 320.0,
+            "chopo_equivalent": "EXUDADO FARINGEO",
+            "notes": "Detección de infecciones respiratorias infantiles",
+            "is_archived": True
+        }
     ]
     for p in base:
         evaluate_promo_validity(p)
@@ -330,32 +667,59 @@ def get_adicionales_lookup() -> Dict[str, Dict[str, Any]]:
     return lookup
 
 
-def get_active_promos_lookup() -> Dict[str, Dict[str, Any]]:
+def get_active_promos_lookup(
+    include_upcoming: bool = True,
+    target_period: Optional[str] = None
+) -> Dict[str, Dict[str, Any]]:
     """
-    Retorna un diccionario mapeando nombre de estudio a la promoción activa más económica.
+    Retorna un diccionario mapeando nombre de estudio a la promoción más económica aplicable.
+    - include_upcoming: Si es True, incluye promociones programadas que inician próximamente (ej. Octubre que inicia mañana).
+    - target_period: Si se especifica, filtra únicamente por esa campaña/período (ej. 'Septiembre 2026' para análisis histórico).
     """
     promos = load_promotions()
     active_promos = {}
     for p in promos:
         status = p.get("status")
-        if status in ("ACTIVE", "PERMANENT", "EXPIRING_SOON"):
-            price = p.get("price_promo")
-            if price is None:
+        period = p.get("period", "")
+
+        # Si se solicita un período específico
+        if target_period and target_period != "Todos los Períodos" and period != target_period:
+            continue
+
+        is_candidate = False
+        if target_period and target_period != "Todos los Períodos":
+            # En análisis histórico de un período específico, tomamos todas las de ese período
+            is_candidate = True
+        else:
+            if status in ("ACTIVE", "PERMANENT", "EXPIRING_SOON"):
+                is_candidate = True
+            elif include_upcoming and status == "UPCOMING":
+                is_candidate = True
+
+        if not is_candidate:
+            continue
+
+        price = p.get("price_promo")
+        if price is None:
+            continue
+
+        studies = p.get("studies", [])
+        p_name = p.get("name", "")
+        all_targets = list(studies) + [p_name]
+        for t in all_targets:
+            norm_t = clean_medical_text(t)
+            if not norm_t:
                 continue
-            studies = p.get("studies", [])
-            p_name = p.get("name", "")
-            all_targets = list(studies) + [p_name]
-            for t in all_targets:
-                norm_t = clean_medical_text(t)
-                if not norm_t:
-                    continue
-                if norm_t not in active_promos or price < active_promos[norm_t]["price"]:
-                    active_promos[norm_t] = {
-                        "promo_id": p.get("id"),
-                        "promo_name": p_name,
-                        "price": float(price),
-                        "category": p.get("category", "")
-                    }
+            if norm_t not in active_promos or price < active_promos[norm_t]["price"]:
+                active_promos[norm_t] = {
+                    "promo_id": p.get("id"),
+                    "promo_name": p_name,
+                    "price": float(price),
+                    "category": p.get("category", ""),
+                    "period": period,
+                    "status": status,
+                    "status_label": p.get("status_label", "")
+                }
     return active_promos
 
 
@@ -363,18 +727,20 @@ def calculate_best_lcm_price(
     study_code: str,
     study_name: str,
     price_list: float,
-    with_checkup: bool = False
+    with_checkup: bool = False,
+    include_upcoming: bool = True,
+    target_period: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Aplica la regla comercial de LCM del Mejor Precio Garantizado:
-    - Compara Precio de Lista vs Precio Adicional (si aplica con Check-Up) vs Precio Promoción Activa.
+    - Compara Precio de Lista vs Precio Adicional (si aplica con Check-Up) vs Precio Promoción Activa / Próxima.
     - Respeta SIEMPRE el precio más bajo para el paciente.
     """
     code_k = str(study_code or "").strip()
     name_norm = clean_medical_text(study_name or "")
 
     adic_lookup = get_adicionales_lookup()
-    promo_lookup = get_active_promos_lookup()
+    promo_lookup = get_active_promos_lookup(include_upcoming=include_upcoming, target_period=target_period)
 
     adic_info = adic_lookup.get(code_k) or adic_lookup.get(name_norm)
     if not adic_info and name_norm:
@@ -401,27 +767,35 @@ def calculate_best_lcm_price(
 
     if price_promo is not None:
         p_name = promo_info.get("promo_name", "Promoción")
-        candidates.append(("PROMOCION", price_promo, f"Precio en promoción '{p_name}' (${price_promo:,.2f})"))
+        p_per = promo_info.get("period", "")
+        p_tag = f" ({p_per})" if p_per else ""
+        candidates.append(("PROMOCION", price_promo, f"Precio en promoción '{p_name}'{p_tag} (${price_promo:,.2f})"))
 
     # Encontrar el menor precio
     sorted_candidates = sorted(candidates, key=lambda x: x[1])
     best_rule, best_price, best_desc = sorted_candidates[0]
 
     # Explicación
+    p_per = promo_info.get("period", "Campaña") if promo_info else ""
     if best_rule == "PROMOCION":
+        promo_stat = promo_info.get("status", "")
+        prefix_promo = f"🎉 **Aplica Tarifa Promoción {p_per} (${price_promo:,.2f})**"
+        if promo_stat == "UPCOMING":
+            prefix_promo += " *(Inicia mañana 1 de Octubre)*"
+
         if with_checkup and price_bundle is not None and price_promo < price_bundle:
             diff_bundle = price_bundle - price_promo
-            explanation = f"🎉 **Aplica Precio Promoción (${price_promo:,.2f})**: Es ${diff_bundle:,.2f} más barato que el precio adicional de paquete (${price_bundle:,.2f})."
+            explanation = f"{prefix_promo}: Es ${diff_bundle:,.2f} más barato que el precio adicional de paquete (${price_bundle:,.2f})."
         else:
             diff_list = price_list - price_promo
-            explanation = f"🎉 **Aplica Precio Promoción (${price_promo:,.2f})**: Ahorro de ${diff_list:,.2f} frente a lista regular (${price_list:,.2f})."
+            explanation = f"{prefix_promo}: Ahorro de ${diff_list:,.2f} frente a lista regular (${price_list:,.2f})."
     elif best_rule == "ADICIONAL":
         if price_promo is not None and price_bundle < price_promo:
             diff_promo = price_promo - price_bundle
-            explanation = f"💡 **Aplica Precio Adicional (${price_bundle:,.2f})**: Al incluirse en Check-Up, es ${diff_promo:,.2f} más barato que la promo individual (${price_promo:,.2f})."
+            explanation = f"💡 **Aplica Precio Adicional (${price_bundle:,.2f})**: Al incluirse en Check-Up, es ${diff_promo:,.2f} más barato que la promo '{promo_info.get('promo_name')}' (${price_promo:,.2f})."
         else:
             diff_list = price_list - price_bundle
-            explanation = f"💡 **Aplica Precio Adicional (${price_bundle:,.2f})**: Descuento especial de Check-Up (Ahorro de ${diff_list:,.2f} frente a lista)."
+            explanation = f"💡 **Aplica Precio Adicional (${price_bundle:,.2f})**: Descuento especial de Check-Up (Ahorro de ${diff_list:,.2f} frente a lista regular)."
     else:
         explanation = f"📋 **Precio de Lista Regular (${price_list:,.2f})**"
         if not with_checkup and price_bundle is not None:
@@ -440,7 +814,8 @@ def calculate_best_lcm_price(
         "has_bundle_price": price_bundle is not None,
         "has_promo_price": price_promo is not None,
         "savings_mxn": savings_mxn,
-        "savings_pct": savings_pct
+        "savings_pct": savings_pct,
+        "promo_info": promo_info
     }
 
 
