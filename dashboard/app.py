@@ -55,6 +55,9 @@ from scraper.favorites_manager import (
     import_favorites_from_json,
     export_favorites_to_json,
 )
+from dashboard.auth import require_auth, logout, verify_hash, get_configured_hashes
+from dashboard.lcm_comparator import render_lcm_comparator_tab
+
 
 # ── Manejador de Favoritos (Persistencia Robusta: JSON + SQLite + Gist) ────────
 def get_user_favorite_names(cm=None) -> set:
@@ -487,15 +490,16 @@ def render_sidebar(labs: list, prices: list) -> dict:
             with st.form("admin_unlock_form"):
                 admin_key = st.text_input("Clave de Administrador", type="password", placeholder="Escribe clave...")
                 if st.form_submit_button("🔓 Desbloquear", use_container_width=True):
-                    import os
-                    admin_pwd = "admin2026"
-                    try:
-                        if hasattr(st, "secrets") and "ADMIN_PASSWORD" in st.secrets:
-                            admin_pwd = str(st.secrets["ADMIN_PASSWORD"])
-                    except Exception:
-                        pass
-                    admin_pwd = os.getenv("ADMIN_PASSWORD", admin_pwd)
-                    if admin_key == admin_pwd:
+                    admin_hash, _ = get_configured_hashes()
+                    is_valid = verify_hash(admin_key, admin_hash)
+                    if not is_valid:
+                        try:
+                            if hasattr(st, "secrets") and "ADMIN_PASSWORD" in st.secrets:
+                                if admin_key == str(st.secrets["ADMIN_PASSWORD"]):
+                                    is_valid = True
+                        except Exception:
+                            pass
+                    if is_valid:
                         st.session_state["is_admin"] = True
                         st.toast("👑 ¡Modo Administrador activado!")
                         st.rerun()
@@ -504,9 +508,8 @@ def render_sidebar(labs: list, prices: list) -> dict:
 
     st.sidebar.markdown("---")
     if st.sidebar.button("🚪 Cerrar Sesión", use_container_width=True):
-        st.session_state["authenticated"] = False
-        st.session_state["is_admin"] = False
-        st.rerun()
+        logout()
+
 
     return {
         "lab": selected_lab,
@@ -2630,66 +2633,9 @@ def render_logs_tab(scrape_log: list):
         st.plotly_chart(fig, use_container_width=True)
 
 
-def check_password() -> bool:
-    """Verifica si el usuario está autenticado y asigna el rol de administrador o consulta."""
-    if st.session_state.get("authenticated", False):
-        return True
-
-    user_password = "chopo2026"
-    admin_password = "admin2026"
-
-    try:
-        if hasattr(st, "secrets"):
-            if "APP_PASSWORD" in st.secrets:
-                user_password = str(st.secrets["APP_PASSWORD"])
-            if "ADMIN_PASSWORD" in st.secrets:
-                admin_password = str(st.secrets["ADMIN_PASSWORD"])
-    except Exception:
-        pass
-
-    import os
-    user_password = os.getenv("APP_PASSWORD", user_password)
-    admin_password = os.getenv("ADMIN_PASSWORD", admin_password)
-
-    _, col_login, _ = st.columns([1, 2, 1])
-    with col_login:
-        st.markdown("<div style='height:40px'></div>", unsafe_allow_html=True)
-        st.markdown(
-            """
-            <div style="background:#ffffff;padding:30px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.08);text-align:center;border:1px solid #e0e0e0;">
-                <h2 style="color:#1a5276;margin-bottom:5px;">🔬 Chopo Price Intelligence</h2>
-                <p style="color:#666;font-size:0.95rem;margin-bottom:20px;">Portal de Análisis de Precios · Mérida, Yucatán</p>
-                <p style="color:#333;font-size:0.9rem;text-align:left;margin-bottom:5px;">🔒 Ingresa tu clave de acceso:</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        with st.form("login_form"):
-            password_input = st.text_input("Clave de acceso", type="password", placeholder="Escribe tu clave aquí...", label_visibility="collapsed")
-            submit = st.form_submit_button("🔓 Ingresar al Portal", type="primary", use_container_width=True)
-
-            if submit:
-                if password_input == admin_password:
-                    st.session_state["authenticated"] = True
-                    st.session_state["is_admin"] = True
-                    st.rerun()
-                elif password_input == user_password:
-                    st.session_state["authenticated"] = True
-                    st.session_state["is_admin"] = False
-                    st.rerun()
-                else:
-                    st.error("❌ Clave incorrecta. Por favor verifícala.")
-
-        st.caption("🔒 Acceso protegido. El nivel de permisos se asigna automáticamente según tu clave.")
-
-    return False
-
-
 # ── Main App ───────────────────────────────────────────────────────────────────
 def main():
-    if not check_password():
-        return
+    require_auth()
 
     initialize()
 
@@ -2705,8 +2651,9 @@ def main():
     is_admin = st.session_state.get("is_admin", False)
 
     if is_admin:
-        tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+        tab0, tab_lcm, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
             "⭐ Favoritos",
+            "⚖️ Comparativa LCM vs Chopo",
             "📋 Catálogo",
             "🏷️ Descuentos & Promos",
             "💼 Paquetes & Estrategia",
@@ -2719,6 +2666,8 @@ def main():
 
         with tab0:
             render_favorites_tab(prices)
+        with tab_lcm:
+            render_lcm_comparator_tab(prices)
         with tab1:
             render_catalog_tab(prices, filters)
         with tab2:
@@ -2736,8 +2685,9 @@ def main():
         with tab8:
             render_logs_tab(scrape_log)
     else:
-        tab0, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        tab0, tab_lcm, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
             "⭐ Favoritos",
+            "⚖️ Comparativa LCM vs Chopo",
             "📋 Catálogo",
             "🏷️ Descuentos & Promos",
             "💼 Paquetes & Estrategia",
@@ -2748,6 +2698,8 @@ def main():
 
         with tab0:
             render_favorites_tab(prices)
+        with tab_lcm:
+            render_lcm_comparator_tab(prices)
         with tab1:
             render_catalog_tab(prices, filters)
         with tab2:
@@ -2764,3 +2716,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
