@@ -57,6 +57,12 @@ from scraper.favorites_manager import (
 )
 from dashboard.auth import require_auth, logout, verify_hash, get_configured_hashes
 from dashboard.lcm_comparator import render_lcm_comparator_tab
+from scraper.lcm_manager import (
+    build_lcm_matches_index,
+    find_lcm_match_for_study,
+    save_price_override,
+    calculate_best_lcm_price,
+)
 
 
 # ── Manejador de Favoritos (Persistencia Robusta: JSON + SQLite + Gist) ────────
@@ -1331,25 +1337,142 @@ def render_changes_tab(changes: list):
 
 
 # ── Tab 0: Favoritos ───────────────────────────────────────────────────────────
+# ── Tab 0: Favoritos (Inteligencia Dual Chopo vs LCM) ─────────────────────────
 def render_favorites_tab(prices: list, **kwargs):
     user_fav_names = get_user_favorite_names()
 
-    c_fav_hdr, c_fav_export = st.columns([3.5, 2.5])
+    # Cargar registros desde DB y completar con los del catálogo
+    db_favs = get_favorites()
+    db_favs_by_name = {f["study_name"]: f for f in db_favs}
+    prices_by_name = {p["study_name"]: p for p in prices if "study_name" in p}
+
+    # Índice de matching LCM <-> Chopo en memoria
+    lcm_index = build_lcm_matches_index()
+
+    fav_items = []
+    for name in sorted(user_fav_names):
+        db_f = db_favs_by_name.get(name, {})
+        pr_f = prices_by_name.get(name, {})
+        cur_p = pr_f.get("price") if pr_f.get("price") is not None else db_f.get("current_price")
+        cur_p_raw = pr_f.get("price_raw") if pr_f.get("price_raw") is not None else db_f.get("current_price_raw")
+
+        # Buscar match en LCM
+        lcm_match = find_lcm_match_for_study(name, lcm_index)
+        has_lcm = lcm_match is not None
+
+        if has_lcm:
+            lcm_code = lcm_match.get("lcm_code")
+            lcm_name = lcm_match.get("lcm_name")
+            lcm_p = float(lcm_match.get("lcm_price") or 0.0)
+            best_pricing = lcm_match.get("best_pricing", {})
+            winner = lcm_match.get("winner", "UNKNOWN")
+            winner_label = lcm_match.get("winner_label", "⚪ Sin comparativa")
+            savings_amount = lcm_match.get("savings_amount", 0.0)
+            savings_pct = lcm_match.get("savings_pct", 0.0)
+            # Si no teníamos precio Chopo por scrape, intentar tomarlo del match
+            if cur_p is None and lcm_match.get("chopo_price_web"):
+                cur_p = float(lcm_match.get("chopo_price_web"))
+            if cur_p_raw is None and lcm_match.get("chopo_price_list"):
+                cur_p_raw = float(lcm_match.get("chopo_price_list"))
+        else:
+            lcm_code = None
+            lcm_name = None
+            lcm_p = None
+            best_pricing = {}
+            winner = "CHOPO_ONLY"
+            winner_label = "⚪ Exclusivo Chopo / Sin match LCM"
+            savings_amount = 0.0
+            savings_pct = 0.0
+
+        fav_items.append({
+            "id": db_f.get("id"),
+            "study_name": name,
+            "lab_key": db_f.get("lab_key") or pr_f.get("lab_key", "chopo_yucatan"),
+            "branch": db_f.get("branch") or pr_f.get("branch", ""),
+            "lab_name": db_f.get("lab_name") or pr_f.get("lab_name", "Chopo Mérida"),
+            "current_price": cur_p,
+            "current_price_raw": cur_p_raw,
+            "price_change": db_f.get("price_change"),
+            "price_change_pct": db_f.get("price_change_pct"),
+            "created_at": db_f.get("created_at") or str(datetime.now())[:10],
+            "note": db_f.get("note") or "",
+            "threshold": db_f.get("alert_threshold"),
+            "has_lcm": has_lcm,
+            "lcm_code": lcm_code,
+            "lcm_name": lcm_name,
+            "lcm_price": lcm_p,
+            "best_pricing": best_pricing,
+            "winner": winner,
+            "winner_label": winner_label,
+            "savings_amount": savings_amount,
+            "savings_pct": savings_pct,
+            "is_manually_edited": lcm_match.get("is_manually_edited", False) if has_lcm else False,
+            "manual_edit_notes": lcm_match.get("manual_edit_notes", "") if has_lcm else "",
+            "lcm_match": lcm_match
+        })
+
+    # Cabecera con herramientas de exportación
+    c_fav_hdr, c_fav_export = st.columns([3.2, 2.8])
     with c_fav_hdr:
-        st.markdown("### ⭐ Mis Estudios Favoritos")
-        st.caption("⭐ Estudios que monitoreas de cerca. Protegidos en tu archivo de configuración y base de datos.")
+        st.markdown("### ⭐ Mis Estudios Favoritos · Inteligencia Dual Chopo vs LCM")
+        st.caption("🔬 Monitoreo clínico y comparativa directa en tiempo real entre Chopo Mérida y Laboratorios Clínicos de Mérida (LCM).")
     with c_fav_export:
-        c_dl, c_up = st.columns(2)
+        c_dl, c_xl, c_up = st.columns([1, 1.2, 1])
         with c_dl:
             if user_fav_names:
                 st.download_button(
-                    "💾 Respaldar JSON",
+                    "💾 JSON",
                     data=export_favorites_to_json(),
-                    file_name="mis_favoritos_chopo.json",
+                    file_name="mis_favoritos_chopo_lcm.json",
                     mime="application/json",
                     use_container_width=True,
-                    help="Descarga tus favoritos para guardarlos o transferirlos a otro celular o computadora."
+                    help="Descarga tus favoritos en JSON para guardarlos o transferirlos a otro dispositivo."
                 )
+        with c_xl:
+            if fav_items:
+                try:
+                    import io
+                    output_xl = io.BytesIO()
+                    rows_export = []
+                    for f in fav_items:
+                        bp = f.get("best_pricing", {})
+                        rows_export.append({
+                            "Estudio Monitoreado": f["study_name"],
+                            "Chopo Web ($)": f.get("current_price"),
+                            "Chopo Mostrador ($)": f.get("current_price_raw"),
+                            "LCM Clave": f.get("lcm_code") or "",
+                            "LCM Nombre Oficial": f.get("lcm_name") or "",
+                            "LCM Lista ($)": f.get("lcm_price"),
+                            "LCM Mejor Tarifa ($)": bp.get("best_price"),
+                            "LCM Regla Aplicada": bp.get("rule", ""),
+                            "Ganador Comercial": f.get("winner_label", ""),
+                            "Ahorro Neto ($)": f.get("savings_amount", 0.0),
+                            "Ahorro (%)": f.get("savings_pct", 0.0),
+                            "Detalle Tarifa": bp.get("explanation", ""),
+                            "Nota Personal": f.get("note", ""),
+                            "Umbral Alerta ($)": f.get("threshold"),
+                            "Fecha Agregado": f.get("created_at", "")[:10]
+                        })
+                    df_exp = pd.DataFrame(rows_export)
+                    with pd.ExcelWriter(output_xl, engine='openpyxl') as writer:
+                        df_exp.to_excel(writer, index=False, sheet_name="Favoritos_Chopo_LCM")
+                    st.download_button(
+                        "📊 Reporte Excel",
+                        data=output_xl.getvalue(),
+                        file_name="comparativa_favoritos_lcm_chopo.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        help="Descarga un reporte en Excel con el comparativo completo de ambos laboratorios."
+                    )
+                except Exception:
+                    csv_data = pd.DataFrame(rows_export).to_csv(index=False).encode('utf-8-sig')
+                    st.download_button(
+                        "📄 CSV",
+                        data=csv_data,
+                        file_name="comparativa_favoritos.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
         with c_up:
             st.checkbox("📥 Restaurar", key="toggle_fav_importer", help="Importar favoritos desde archivo JSON")
 
@@ -1364,163 +1487,415 @@ def render_favorites_tab(prices: list, **kwargs):
                     st.success(f"✅ ¡{imported_count} favoritos restaurados exitosamente!")
                     st.rerun()
 
-    # Cargar registros desde DB y completar con los del navegador
-    db_favs = get_favorites()
-    db_favs_by_name = {f["study_name"]: f for f in db_favs}
-    prices_by_name = {p["study_name"]: p for p in prices if "study_name" in p}
-
-    favorites = []
-    for name in sorted(user_fav_names):
-        if name in db_favs_by_name:
-            favorites.append(db_favs_by_name[name])
-        else:
-            p = prices_by_name.get(name, {})
-            favorites.append({
-                "id": None,
-                "study_name": name,
-                "lab_key": p.get("lab_key", "chopo_yucatan"),
-                "branch": p.get("branch", ""),
-                "lab_name": p.get("lab_name", "Chopo Mérida"),
-                "current_price": p.get("price"),
-                "current_price_raw": p.get("price_raw"),
-                "price_change": None,
-                "price_change_pct": None,
-                "created_at": str(datetime.now())[:10],
-                "note": "",
-                "alert_threshold": None,
-            })
-
-    if not favorites:
+    if not fav_items:
         st.info(
-            "Aún no tienes favoritos agregados. Ve a la pestaña **Catálogo**, busca cualquier estudio "
-            "y haz clic en **⭐ MARCAR COMO FAVORITO** para tenerlo siempre aquí."
+            "💡 **Aún no tienes estudios agregados a favoritos.**  \n"
+            "Puedes marcar estudios como favoritos con un clic en la estrella ⭐ desde:  \n"
+            "1. La pestaña **⚖️ Comparativa LCM vs Chopo** (en el Buscador Cara a Cara o en la Matriz).  \n"
+            "2. La pestaña **📋 Catálogo Chopo** en cualquiera de los estudios listados."
         )
         return
 
-    # ── Métricas rápidas ──────────────────────────────────────────────────────
-    total_favs = len(favorites)
-    with_price  = [f for f in favorites if f.get("current_price")]
-    rising      = [f for f in with_price if (f.get("price_change") or 0) > 0]
-    falling     = [f for f in with_price if (f.get("price_change") or 0) < 0]
+    # ── Métricas Rápidas & Análisis de Inteligencia Competitiva ────────────────
+    total_favs = len(fav_items)
+    lcm_cheaper = [f for f in fav_items if f["winner"] == "LCM"]
+    chopo_cheaper = [f for f in fav_items if f["winner"] == "CHOPO"]
+    promo_items = [f for f in fav_items if f["has_lcm"] and f["best_pricing"].get("has_promo_price")]
+    bundle_items = [f for f in fav_items if f["has_lcm"] and f["best_pricing"].get("has_bundle_price")]
+    threshold_alerts = [f for f in fav_items if f["threshold"] and f["current_price"] and f["current_price"] > f["threshold"]]
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total favoritos", total_favs)
-    c2.metric("Con precio activo", len(with_price))
-    c3.metric("Con precio subido ▲", len(rising))
-    c4.metric("Con precio bajado ▼", len(falling))
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        st.metric(
+            "Total en Seguimiento",
+            f"{total_favs} estudios",
+            help="Total de estudios agregados a tu portafolio de monitoreo clínico"
+        )
+    with k2:
+        pct_lcm = round((len(lcm_cheaper) / total_favs) * 100, 1) if total_favs else 0
+        tot_lcm_sav = sum(f["savings_amount"] for f in lcm_cheaper)
+        st.metric(
+            "🟢 LCM Más Económico",
+            f"{len(lcm_cheaper)} estudios",
+            delta=f"{pct_lcm}% de tu lista (Ahorro: ${tot_lcm_sav:,.2f})",
+            delta_color="normal",
+            help="Estudios donde la tarifa de LCM es más baja que Chopo Web"
+        )
+    with k3:
+        pct_chopo = round((len(chopo_cheaper) / total_favs) * 100, 1) if total_favs else 0
+        tot_chopo_sav = sum(f["savings_amount"] for f in chopo_cheaper)
+        st.metric(
+            "🔴 Chopo Más Económico",
+            f"{len(chopo_cheaper)} estudios",
+            delta=f"{pct_chopo}% de tu lista (Ahorro: ${tot_chopo_sav:,.2f})",
+            delta_color="inverse",
+            help="Estudios donde Chopo Web ofrece menor precio que LCM"
+        )
+    with k4:
+        st.metric(
+            "🎁 Tarifas Especiales LCM",
+            f"{len(promo_items) + len(bundle_items)} ofertas",
+            delta=f"{len(promo_items)} en Promo · {len(bundle_items)} en Check-Up",
+            delta_color="off",
+            help="Estudios favoritos con Promoción mensual/cuatrimestral o tarifa reducida si se añade a un Check-up"
+        )
+
+    # ── 🧺 Simulador de Canasta de Favoritos (Bolsa Completa) ───────────────────
+    comparable_basket = [f for f in fav_items if f["current_price"] and f["lcm_price"] and f["lcm_price"] > 0]
+    if len(comparable_basket) >= 2:
+        tot_chopo_basket = sum(f["current_price"] for f in comparable_basket)
+        tot_lcm_list_basket = sum(f["lcm_price"] for f in comparable_basket)
+        tot_lcm_best_basket = sum(f["best_pricing"]["best_price"] for f in comparable_basket)
+        net_basket_diff = tot_chopo_basket - tot_lcm_best_basket
+        net_basket_pct = round((abs(net_basket_diff) / tot_chopo_basket) * 100, 1) if tot_chopo_basket > 0 else 0
+
+        with st.expander(f"🧺 Análisis de Canasta Completa ({len(comparable_basket)} estudios comparables)", expanded=True):
+            b_c1, b_c2, b_c3, b_c4 = st.columns(4)
+            b_c1.metric("Costo Total Chopo Web", f"${tot_chopo_basket:,.2f} MXN", help="Suma de precios con descuento web en Chopo Mérida")
+            b_c2.metric("Costo Total LCM Lista", f"${tot_lcm_list_basket:,.2f} MXN", help="Suma a precio regular oficial de LCM")
+            b_c3.metric(
+                "Costo Total LCM Óptimo",
+                f"${tot_lcm_best_basket:,.2f} MXN",
+                delta=f"-${tot_lcm_list_basket - tot_lcm_best_basket:,.2f} por promos/adicionales" if tot_lcm_list_basket > tot_lcm_best_basket else None,
+                help="Suma aplicando promociones activas y precios adicionales de paquete en LCM"
+            )
+            with b_c4:
+                if net_basket_diff > 0:
+                    st.metric("🏆 Ahorro Global en LCM", f"${net_basket_diff:,.2f} MXN", delta=f"{net_basket_pct}% más barato", delta_color="normal")
+                elif net_basket_diff < 0:
+                    st.metric("🏆 Ahorro Global en Chopo", f"${abs(net_basket_diff):,.2f} MXN", delta=f"{net_basket_pct}% más barato", delta_color="inverse")
+                else:
+                    st.metric("⚖️ Costo Idéntico", "$0.00 MXN", delta="Mismo precio exacto", delta_color="off")
+
+            if net_basket_diff > 0:
+                st.success(
+                    f"💡 **Recomendación para Cotización:** Si un paciente se realiza todos estos {len(comparable_basket)} estudios en conjunto, "
+                    f"**conviene cotizarlos en LCM**, logrando un ahorro neto de **${net_basket_diff:,.2f} MXN ({net_basket_pct}%)** frente a Chopo Mérida Altabrisa."
+                )
+            elif net_basket_diff < 0:
+                st.info(
+                    f"💡 **Recomendación para Cotización:** En la canasta acumulada, **Chopo Mérida se encuentra ${abs(net_basket_diff):,.2f} MXN ({net_basket_pct}%) por debajo** "
+                    f"de la tarifa regular de LCM."
+                )
+
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
+    # ── Barra de Filtros & Búsqueda ───────────────────────────────────────────
+    filter_col1, filter_col2 = st.columns([3, 2])
+    with filter_col1:
+        filter_options = [
+            f"Todos ({total_favs})",
+            f"🟢 LCM Más Barato ({len(lcm_cheaper)})",
+            f"🔴 Chopo Más Barato ({len(chopo_cheaper)})",
+            f"🎁 Con Oferta LCM ({len(promo_items) + len(bundle_items)})",
+        ]
+        if threshold_alerts:
+            filter_options.append(f"⚠️ Alerta de Umbral ({len(threshold_alerts)})")
+
+        selected_filter = st.radio(
+            "Filtrar favoritos por condición:",
+            options=filter_options,
+            horizontal=True,
+            key="fav_filter_radio"
+        )
+
+    with filter_col2:
+        search_fav = st.text_input(
+            "🔍 Buscar en tus favoritos:",
+            placeholder="Ej. Biometría, Hormonal, Vitamina, 1400...",
+            key="search_fav_query"
+        )
+
+    # Aplicar filtros
+    filtered_items = fav_items
+    if "🟢 LCM Más Barato" in selected_filter:
+        filtered_items = [f for f in filtered_items if f["winner"] == "LCM"]
+    elif "🔴 Chopo Más Barato" in selected_filter:
+        filtered_items = [f for f in filtered_items if f["winner"] == "CHOPO"]
+    elif "🎁 Con Oferta LCM" in selected_filter:
+        filtered_items = [f for f in filtered_items if f["has_lcm"] and (f["best_pricing"].get("has_promo_price") or f["best_pricing"].get("has_bundle_price"))]
+    elif "⚠️ Alerta de Umbral" in selected_filter:
+        filtered_items = [f for f in filtered_items if f["threshold"] and f["current_price"] and f["current_price"] > f["threshold"]]
+
+    if search_fav:
+        q_clean = search_fav.strip().lower()
+        filtered_items = [
+            f for f in filtered_items
+            if q_clean in f["study_name"].lower()
+            or q_clean in str(f.get("lcm_code", "")).lower()
+            or q_clean in str(f.get("lcm_name", "")).lower()
+            or q_clean in f.get("note", "").lower()
+        ]
+
     st.markdown("---")
 
-    # ── Tabla de favoritos ────────────────────────────────────────────────────
-    for fav in favorites:
-        name         = fav["study_name"]
-        price        = fav.get("current_price")
-        change       = fav.get("price_change")
-        change_pct   = fav.get("price_change_pct")
-        note         = fav.get("note") or ""
-        threshold    = fav.get("alert_threshold")
-        lab_key      = fav["lab_key"]
-        branch       = fav.get("branch", "")
+    if not filtered_items:
+        st.info("No se encontraron estudios favoritos con el filtro o término de búsqueda seleccionado.")
+        return
 
-        # Color del delta
-        if change and change > 0:
-            delta_str = f"+${change:.2f} (+{change_pct:.1f}%)"
-            delta_color = "inverse"
-        elif change and change < 0:
-            delta_str = f"-${abs(change):.2f} ({change_pct:.1f}%)"
-            delta_color = "normal"
+    # ── Tarjetas Expander por Estudio Favorito ────────────────────────────────
+    for fav in filtered_items:
+        name = fav["study_name"]
+        price = fav.get("current_price")
+        price_raw = fav.get("current_price_raw")
+        change = fav.get("price_change")
+        change_pct = fav.get("price_change_pct")
+        note = fav.get("note") or ""
+        threshold = fav.get("threshold")
+        lab_key = fav["lab_key"]
+        branch = fav.get("branch", "")
+        has_lcm = fav["has_lcm"]
+        lcm_p = fav.get("lcm_price")
+        best_calc = fav.get("best_pricing", {})
+        winner = fav.get("winner")
+
+        # Insignia en el título del expander
+        badge_header = ""
+        if has_lcm:
+            if winner == "LCM":
+                badge_header = f" · 🟢 LCM -${fav['savings_amount']:,.2f} (-{fav['savings_pct']}%)"
+            elif winner == "CHOPO":
+                badge_header = f" · 🔴 Chopo -${fav['savings_amount']:,.2f} (-{fav['savings_pct']}%)"
+            elif winner == "EQUAL":
+                badge_header = " · ⚖️ Mismo Precio"
+
+            if best_calc.get("has_promo_price"):
+                badge_header += " · 🎉 En Promo"
+            elif best_calc.get("has_bundle_price"):
+                badge_header += " · 💡 En Check-Up"
         else:
-            delta_str = "Sin cambios"
-            delta_color = "off"
+            badge_header = " · ⚪ Exclusivo Chopo"
 
-        with st.expander(f"⭐ {name}", expanded=False):
-            col_price, col_info, col_actions = st.columns([2, 3, 2])
+        code_tag = f"[{fav['lcm_code']}] " if fav.get("lcm_code") else ""
+        expander_title = f"⭐ {code_tag}{name}{badge_header}"
 
-            with col_price:
-                if price:
-                    st.metric(
-                        label="Precio actual",
-                        value=f"${price:,.2f}",
-                        delta=delta_str if change else None,
-                        delta_color=delta_color,
-                    )
-                else:
-                    st.metric("Precio actual", "No disponible")
+        with st.expander(expander_title, expanded=False):
+            col_chopo, col_vs, col_lcm = st.columns([4.4, 0.8, 4.8])
+
+            # ── 1. Columna Chopo ──────────────────────────────────────────────
+            with col_chopo:
+                st.markdown(f"""
+                <div style="background:#f8fafc; border:2px solid #64748b; border-radius:10px; padding:15px; height:100%;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span style="background:#f1f5f9; color:#334155; font-weight:700; font-size:0.78rem; padding:3px 8px; border-radius:10px;">
+                            Chopo Mérida Altabrisa
+                        </span>
+                        <span style="color:#64748b; font-size:0.75rem; font-weight:600;">{fav.get('lab_name', 'Chopo')}</span>
+                    </div>
+                    <div style="font-weight:700; font-size:0.95rem; color:#0f172a; margin-bottom:10px; line-height:1.3;">
+                        {name}
+                    </div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+                        <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:8px 10px;">
+                            <span style="font-size:0.7rem; color:#16a34a; font-weight:700; text-transform:uppercase; display:block;">Precio Web</span>
+                            <span style="font-size:1.25rem; font-weight:800; color:#16a34a;">
+                                {'$' + f"{price:,.2f}" if price else "N/D"}
+                            </span>
+                        </div>
+                        <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:8px 10px;">
+                            <span style="font-size:0.7rem; color:#64748b; font-weight:700; text-transform:uppercase; display:block;">Mostrador</span>
+                            <span style="font-size:1.25rem; font-weight:800; color:#475569;">
+                                {'$' + f"{price_raw:,.2f}" if price_raw else "N/D"}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                if change and change != 0:
+                    delta_chg_str = f"+${change:.2f} (+{change_pct:.1f}%)" if change > 0 else f"-${abs(change):.2f} ({change_pct:.1f}%)"
+                    st.caption(f"📈 Variación reciente en Chopo: **{delta_chg_str}**")
 
                 if threshold and price:
                     if price > threshold:
-                        st.warning(f"⚠️ Precio supera umbral de ${threshold:,.2f}")
+                        st.warning(f"⚠️ El precio de Chopo (${price:,.2f}) supera tu umbral de alerta (${threshold:,.2f})")
                     else:
-                        st.success(f"✅ Precio bajo umbral de ${threshold:,.2f}")
+                        st.caption(f"✅ Precio bajo umbral de ${threshold:,.2f}")
 
-            with col_info:
-                st.markdown(f"**Laboratorio:** {fav.get('lab_name', lab_key)}")
-                st.markdown(f"**Sucursal:** {branch or 'N/A'}")
-                st.markdown(f"**Agregado:** {fav.get('created_at', '')[:10]}")
+            # ── 2. Divisor VS ─────────────────────────────────────────────────
+            with col_vs:
+                st.markdown("<div style='height:45px'></div><div style='text-align:center; font-size:1.2rem; font-weight:800; color:#94a3b8;'>VS</div>", unsafe_allow_html=True)
 
-                # Editar nota
+            # ── 3. Columna LCM ────────────────────────────────────────────────
+            with col_lcm:
+                if has_lcm:
+                    lcm_code_str = fav.get("lcm_code", "N/D")
+                    lcm_name_str = fav.get("lcm_name", "N/D")
+                    mod_tag = " <span style='background:#fef3c7; color:#92400e; font-size:0.7rem; padding:2px 6px; border-radius:6px;'>✏️ Modificado</span>" if fav.get("is_manually_edited") else ""
+
+                    extra_badge_html = ""
+                    if best_calc.get("has_promo_price") or best_calc.get("has_bundle_price"):
+                        p_promo_str = f"${best_calc['price_promo']:,.2f}" if best_calc.get("has_promo_price") else "N/A"
+                        p_bund_str = f"${best_calc['price_bundle']:,.2f}" if best_calc.get("has_bundle_price") else "N/A"
+                        extra_badge_html = f"""
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:8px;">
+                            <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:6px 10px;">
+                                <span style="font-size:0.68rem; color:#64748b; font-weight:700; display:block;">En Check-Up (Adicional)</span>
+                                <span style="font-size:1.1rem; font-weight:800; color:{'#0284c7' if best_calc.get('has_bundle_price') else '#94a3b8'};">{p_bund_str}</span>
+                            </div>
+                            <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:6px 10px;">
+                                <span style="font-size:0.68rem; color:#64748b; font-weight:700; display:block;">Promoción Activa/Próx</span>
+                                <span style="font-size:1.1rem; font-weight:800; color:{'#16a34a' if best_calc.get('has_promo_price') else '#94a3b8'};">{p_promo_str}</span>
+                            </div>
+                        </div>
+                        """
+
+                    st.markdown(f"""
+                    <div style="background:#f0fdf4; border:2px solid #059669; border-radius:10px; padding:15px; height:100%;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                            <span style="background:#d1fae5; color:#065f46; font-weight:700; font-size:0.78rem; padding:3px 8px; border-radius:10px;">
+                                LCM · Clave {lcm_code_str}{mod_tag}
+                            </span>
+                            <span style="color:#047857; font-size:0.75rem; font-weight:600;">Laboratorios Clínicos de Mérida</span>
+                        </div>
+                        <div style="font-weight:700; font-size:0.95rem; color:#0f172a; margin-bottom:10px; line-height:1.3;">
+                            {lcm_name_str}
+                        </div>
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+                            <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:8px 10px;">
+                                <span style="font-size:0.7rem; color:#64748b; font-weight:700; text-transform:uppercase; display:block;">Precio de Lista</span>
+                                <span style="font-size:1.25rem; font-weight:800; color:#0284c7;">
+                                    {'$' + f"{lcm_p:,.2f}" if lcm_p else "N/D"}
+                                </span>
+                            </div>
+                            <div style="background:#ffffff; border:1px solid #6ee7b7; border-radius:6px; padding:8px 10px;">
+                                <span style="font-size:0.7rem; color:#047857; font-weight:700; text-transform:uppercase; display:block;">💡 Mejor Tarifa LCM</span>
+                                <span style="font-size:1.25rem; font-weight:800; color:#059669;">
+                                    {'$' + f"{best_calc.get('best_price', 0):,.2f}" if best_calc.get('best_price') else "N/D"}
+                                </span>
+                            </div>
+                        </div>
+                        {extra_badge_html}
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown("""
+                    <div style="background:#fef2f2; border:2px dashed #f87171; border-radius:10px; padding:20px; text-align:center; height:100%;">
+                        <div style="font-size:1.6rem; margin-bottom:4px;">🔎</div>
+                        <h5 style="color:#991b1b; margin:0 0 4px 0;">Sin Homólogo Directo en LCM</h5>
+                        <p style="color:#7f1d1d; font-size:0.8rem; margin:0;">
+                            Estudio exclusivo de Chopo o catalogado bajo una denominación compuesta distinta.
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            # ── Veredicto Comercial ───────────────────────────────────────────
+            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+            if has_lcm and price and best_calc.get("best_price"):
+                best_lcm_p = best_calc["best_price"]
+                diff_val = price - best_lcm_p
+                diff_p = round((abs(diff_val) / price) * 100, 1) if price > 0 else 0
+
+                if diff_val > 0:
+                    st.success(f"""
+                    🎉 **Veredicto Comercial: LCM es más económico (-${diff_val:,.2f} MXN / -{diff_p}%)**  
+                    {best_calc.get('explanation', '')}  
+                    El paciente ahorra realizándolo en **LCM** comparado con la tarifa web de Chopo.
+                    """)
+                elif diff_val < 0:
+                    st.warning(f"""
+                    ⚠️ **Veredicto Comercial: Chopo ofrece menor precio (-${abs(diff_val):,.2f} MXN / -{diff_p}%)**  
+                    Chopo Mérida Altabrisa mantiene una tarifa web más baja que la mejor opción de LCM para este estudio individual.
+                    """)
+                else:
+                    st.info("🤝 **Veredicto Comercial: Mismo precio exacto** en ambos laboratorios.")
+
+            # ── Acciones, Notas & Modificación de Precio ──────────────────────
+            c_actions_left, c_actions_right = st.columns([1.6, 1.4])
+
+            with c_actions_left:
+                # Modificación rápida de precio LCM
+                if has_lcm and fav.get("lcm_code"):
+                    with st.expander(f"✏️ ¿El precio de LCM ({fav['lcm_code']}) cambió o está desfasado?", expanded=False):
+                        st.caption(f"Actualiza el precio de `{fav['lcm_code']}` - **{fav['lcm_name']}**:")
+                        c_p_in, c_n_in = st.columns([1, 1.5])
+                        with c_p_in:
+                            new_lcm_val = st.number_input(
+                                "Nuevo precio LCM ($):",
+                                min_value=0.0,
+                                max_value=200000.0,
+                                value=float(lcm_p or 0.0),
+                                step=10.0,
+                                format="%.2f",
+                                key=f"edit_fav_lcm_{fav['lcm_code']}_{name}"
+                            )
+                        with c_n_in:
+                            new_lcm_note = st.text_input(
+                                "Motivo / Fecha:",
+                                value=fav.get("manual_edit_notes", ""),
+                                placeholder="Ej: Ajuste de lista Octubre",
+                                key=f"edit_fav_note_{fav['lcm_code']}_{name}"
+                            )
+                        if st.button("💾 Guardar Precio LCM", key=f"save_fav_lcm_{fav['lcm_code']}_{name}", type="primary"):
+                            save_price_override(fav["lcm_code"], fav["lcm_name"], new_lcm_val, new_lcm_note)
+                            st.success(f"✅ Precio LCM actualizado a ${new_lcm_val:,.2f} MXN")
+                            st.rerun()
+
+                # Mini historial temporal de Chopo
+                try:
+                    history = get_price_history(study_name=name)
+                    if history and len(history) > 1:
+                        df_h = pd.DataFrame(history)
+                        df_h["scraped_at"] = pd.to_datetime(df_h["scraped_at"])
+                        df_h = df_h.sort_values("scraped_at")
+                        fig = px.line(
+                            df_h,
+                            x="scraped_at",
+                            y="price",
+                            title=f"Historial Chopo: {name[:40]}",
+                            markers=True,
+                            color_discrete_sequence=["#0284c7"],
+                        )
+                        fig.update_layout(
+                            height=200,
+                            margin=dict(t=30, b=20, l=20, r=20),
+                            xaxis_title="Fecha",
+                            yaxis_title="Precio (MXN)",
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                except Exception:
+                    pass
+
+            with c_actions_right:
+                # Notas personales y umbral
                 new_note = st.text_input(
-                    "Nota personal",
+                    "Nota personal:",
                     value=note,
                     key=f"note_{name}",
-                    placeholder="Ej: Para paciente X, comparar con Salud Digna",
+                    placeholder="Ej: Para paciente X, monitorear cada mes...",
                 )
                 new_threshold = st.number_input(
-                    "Alerta si precio supera ($)",
+                    "Alerta si precio Chopo supera ($):",
                     value=float(threshold) if threshold else 0.0,
                     min_value=0.0,
                     step=10.0,
                     key=f"thr_{name}",
                 )
-                if st.button("Guardar nota", key=f"save_{name}"):
-                    update_favorite_note(
-                        name, lab_key,
-                        note=new_note or None,
-                        alert_threshold=new_threshold if new_threshold > 0 else None,
-                    )
-                    st.success("Guardado")
-                    st.rerun()
+                c_save_n, c_del_f = st.columns([1.2, 1.2])
+                with c_save_n:
+                    if st.button("💾 Guardar Nota", key=f"save_{name}", use_container_width=True):
+                        update_favorite_note(
+                            name, lab_key,
+                            note=new_note or None,
+                            alert_threshold=new_threshold if new_threshold > 0 else None,
+                        )
+                        st.success("Guardado")
+                        st.rerun()
+                with c_del_f:
+                    def _cb_fav_remove_from_tab(s_name=name, l_key=lab_key, br=branch):
+                        remove_user_fav(s_name, l_key, br or None)
 
-            with col_actions:
-                def _cb_fav_remove_from_tab(s_name=name, l_key=lab_key, br=branch):
-                    remove_user_fav(s_name, l_key, br or None)
-
-                st.button(
-                    "🗑️ Quitar de favoritos",
-                    key=f"del_{name}",
-                    type="secondary",
-                    on_click=_cb_fav_remove_from_tab,
-                    use_container_width=True
-                )
-
-            # Mini historial de precio
-            try:
-                history = get_price_history(study_name=name)
-                if history and len(history) > 1:
-                    df_h = pd.DataFrame(history)
-                    df_h["scraped_at"] = pd.to_datetime(df_h["scraped_at"])
-                    df_h = df_h.sort_values("scraped_at")
-                    fig = px.line(
-                        df_h,
-                        x="scraped_at",
-                        y="price",
-                        title=f"Historial de precio: {name[:50]}",
-                        markers=True,
-                        color_discrete_sequence=["#f39c12"],
+                    st.button(
+                        "🗑️ Quitar",
+                        key=f"del_{name}",
+                        type="secondary",
+                        on_click=_cb_fav_remove_from_tab,
+                        use_container_width=True
                     )
-                    fig.update_layout(
-                        height=250,
-                        margin=dict(t=40, b=20, l=20, r=20),
-                        xaxis_title="Fecha",
-                        yaxis_title="Precio (MXN)",
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.caption("Historial disponible después del segundo scrape diario.")
-            except Exception:
-                pass
 
     st.markdown("---")
-    st.caption(f"Total: {total_favs} estudios en seguimiento")
+    st.caption(f"Mostrando {len(filtered_items)} de {total_favs} estudios favoritos monitoreados.")
+
 
 
 # ── Tab: Descuentos & Promociones ─────────────────────────────────────────────

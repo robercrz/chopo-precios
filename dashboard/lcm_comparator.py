@@ -33,6 +33,12 @@ from scraper.lcm_manager import (
     get_adicionales_lookup,
     get_active_promos_lookup,
 )
+from scraper.favorites_manager import (
+    get_favorite_study_names,
+    add_favorite_study,
+    remove_favorite_study,
+)
+
 
 
 DATA_FILE = Path(__file__).parent.parent / "data" / "lcm" / "lcm_chopo_matches.json"
@@ -175,6 +181,39 @@ def render_lcm_comparator_tab(chopo_prices: list):
 
         if selected_label and selected_label in study_map:
             item = study_map[selected_label]
+
+            # Control de Favorito directo desde el comparador
+            fav_study_key = item.get("chopo_name") or item.get("lcm_name")
+            user_favs = st.session_state.get("user_favorites_set")
+            if user_favs is None:
+                user_favs = get_favorite_study_names()
+                st.session_state["user_favorites_set"] = user_favs
+
+            is_fav = (item.get("chopo_name") in user_favs) or (item.get("lcm_name") in user_favs)
+
+            c_info_bar, c_fav_btn = st.columns([3.8, 1.2])
+            with c_info_bar:
+                st.caption(f"📌 Estudio seleccionado: **{item.get('lcm_name')}** · Clave `{item.get('lcm_code')}`")
+            with c_fav_btn:
+                if is_fav:
+                    if st.button("⭐ En Favoritos (Quitar)", key=f"fav_btn_toggle_{item.get('lcm_code')}", use_container_width=True):
+                        if item.get("chopo_name"):
+                            remove_favorite_study(item["chopo_name"])
+                            user_favs.discard(item["chopo_name"])
+                        if item.get("lcm_name"):
+                            remove_favorite_study(item["lcm_name"])
+                            user_favs.discard(item["lcm_name"])
+                        st.session_state["user_favorites_set"] = user_favs
+                        st.toast(f"'{fav_study_key}' removido de tus favoritos")
+                        st.rerun()
+                else:
+                    if st.button("☆ Agregar a Favoritos", key=f"fav_btn_toggle_{item.get('lcm_code')}", type="primary", use_container_width=True):
+                        add_favorite_study(fav_study_key)
+                        user_favs.add(fav_study_key)
+                        st.session_state["user_favorites_set"] = user_favs
+                        st.toast(f"⭐ '{fav_study_key}' agregado a tus favoritos!")
+                        st.rerun()
+
             col_lcm, col_vs, col_chopo = st.columns([5, 1, 5])
 
             with col_lcm:
@@ -893,9 +932,10 @@ def render_lcm_comparator_tab(chopo_prices: list):
                 "Filtrar por Veredicto Comercial:",
                 [
                     "Todos los estudios",
+                    "⭐ Solo Mis Estudios Favoritos",
                     "🟢 Solo donde LCM es más barato",
                     "🔴 Solo donde Chopo es más barato",
-                    "⭐ Estudios con Tarifa Especial Adicional",
+                    "💡 Estudios con Tarifa Especial Adicional",
                     "🎁 Estudios en Promoción Activa / Próxima",
                     "✏️ Solo estudios modificados manualmente",
                     "🔎 Sin homólogo en Chopo"
@@ -911,6 +951,11 @@ def render_lcm_comparator_tab(chopo_prices: list):
 
         adic_lookup = get_adicionales_lookup()
         promo_lookup = get_active_promos_lookup(include_upcoming=True)
+
+        user_favs_set = st.session_state.get("user_favorites_set")
+        if user_favs_set is None:
+            user_favs_set = get_favorite_study_names()
+            st.session_state["user_favorites_set"] = user_favs_set
 
         # Construir DataFrame
         df_rows = []
@@ -928,14 +973,19 @@ def render_lcm_comparator_tab(chopo_prices: list):
             p_promo_name = p_promo_info.get("promo_name") if p_promo_info else None
             p_promo_per = p_promo_info.get("period") if p_promo_info else None
 
+            is_study_fav = (m.get("chopo_name") in user_favs_set) or (m.get("lcm_name") in user_favs_set)
+
             # Aplicar filtro de veredicto
-            if verdict_filter == "🟢 Solo donde LCM es más barato":
+            if verdict_filter == "⭐ Solo Mis Estudios Favoritos":
+                if not is_study_fav:
+                    continue
+            elif verdict_filter == "🟢 Solo donde LCM es más barato":
                 if diff_m is None or diff_m >= 0:
                     continue
             elif verdict_filter == "🔴 Solo donde Chopo es más barato":
                 if diff_m is None or diff_m <= 0:
                     continue
-            elif verdict_filter == "⭐ Estudios con Tarifa Especial Adicional":
+            elif verdict_filter == "💡 Estudios con Tarifa Especial Adicional":
                 if p_bundle is None:
                     continue
             elif verdict_filter == "🎁 Estudios en Promoción Activa / Próxima":
@@ -979,6 +1029,7 @@ def render_lcm_comparator_tab(chopo_prices: list):
                 verd += " (✏️ Editado)"
 
             df_rows.append({
+                "Favorito": "⭐ SÍ" if is_study_fav else "",
                 "Clave": m.get("lcm_code", ""),
                 "Estudio LCM": m.get("lcm_name", ""),
                 "Precio Lista LCM": m.get("lcm_price"),

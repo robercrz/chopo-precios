@@ -1239,3 +1239,209 @@ def process_uploaded_catalog(df: pd.DataFrame, code_col: Optional[str], name_col
 
     return output_payload['metadata']
 
+
+# ── 6. MOTOR DE CONSULTA DE HOMÓLOGOS Y COMPARATIVA PARA FAVORITOS ───────────
+
+def build_lcm_matches_index(matches: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """
+    Construye índices optimizados en memoria para búsqueda ultra-rápida de homólogos
+    LCM <-> Chopo por nombre Chopo, nombre LCM, código LCM y texto médico normalizado.
+    """
+    if matches is None:
+        matches = get_consolidated_matches().get("matches", [])
+
+    chopo_exact: Dict[str, Dict[str, Any]] = {}
+    lcm_exact: Dict[str, Dict[str, Any]] = {}
+    code_exact: Dict[str, Dict[str, Any]] = {}
+    chopo_clean: Dict[str, Dict[str, Any]] = {}
+    lcm_clean: Dict[str, Dict[str, Any]] = {}
+
+    for m in matches:
+        code = str(m.get("lcm_code", "")).strip()
+        c_name = str(m.get("chopo_name", "")).strip() if m.get("chopo_name") else ""
+        l_name = str(m.get("lcm_name", "")).strip() if m.get("lcm_name") else ""
+        conf = float(m.get("confidence") or 0.0)
+
+        if code:
+            code_exact[code] = m
+
+        if c_name:
+            norm_c = strip_accents(c_name).upper()
+            norm_c_alnum = ' '.join(re.sub(r'[^A-Z0-9\s]', ' ', norm_c).split())
+            if norm_c_alnum not in chopo_exact or conf > (chopo_exact[norm_c_alnum].get("confidence") or 0):
+                chopo_exact[norm_c_alnum] = m
+
+            c_cl = clean_medical_text(c_name)
+            if c_cl not in chopo_clean or conf > (chopo_clean[c_cl].get("confidence") or 0):
+                chopo_clean[c_cl] = m
+
+        if l_name:
+            norm_l = strip_accents(l_name).upper()
+            norm_l_alnum = ' '.join(re.sub(r'[^A-Z0-9\s]', ' ', norm_l).split())
+            if norm_l_alnum not in lcm_exact or conf > (lcm_exact[norm_l_alnum].get("confidence") or 0):
+                lcm_exact[norm_l_alnum] = m
+
+            l_cl = clean_medical_text(l_name)
+            if l_cl not in lcm_clean or conf > (lcm_clean[l_cl].get("confidence") or 0):
+                lcm_clean[l_cl] = m
+
+    return {
+        "matches": matches,
+        "code_exact": code_exact,
+        "chopo_exact": chopo_exact,
+        "lcm_exact": lcm_exact,
+        "chopo_clean": chopo_clean,
+        "lcm_clean": lcm_clean,
+    }
+
+
+def find_lcm_match_for_study(study_name: str, index: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    """
+    Busca de forma inteligente el registro de comparación de LCM para cualquier estudio (de Chopo o de LCM).
+    Retorna el match enriquecido con cálculo de Mejor Tarifa LCM, diferencias y recomendación.
+    """
+    if not study_name:
+        return None
+
+    if index is None:
+        index = build_lcm_matches_index()
+
+    q_raw = str(study_name).strip()
+    q_norm = strip_accents(q_raw).upper()
+    q_norm_alnum = ' '.join(re.sub(r'[^A-Z0-9\s]', ' ', q_norm).split())
+    q_clean = clean_medical_text(q_raw)
+
+    match_record = None
+    match_source = None
+
+    # 1. Búsqueda exacta por código
+    if q_raw in index["code_exact"]:
+        match_record = index["code_exact"][q_raw]
+        match_source = "EXACT_CODE"
+
+    # 2. Búsqueda exacta por Chopo
+    elif q_norm_alnum in index["chopo_exact"]:
+        match_record = index["chopo_exact"][q_norm_alnum]
+        match_source = "EXACT_CHOPO"
+
+    # 3. Búsqueda exacta por LCM
+    elif q_norm_alnum in index["lcm_exact"]:
+        match_record = index["lcm_exact"][q_norm_alnum]
+        match_source = "EXACT_LCM"
+
+    # 4. Búsqueda normalizada por texto médico limpio
+    elif q_clean in index["chopo_clean"]:
+        match_record = index["chopo_clean"][q_clean]
+        match_source = "CLEAN_CHOPO"
+
+    elif q_clean in index["lcm_clean"]:
+        match_record = index["lcm_clean"][q_clean]
+        match_source = "CLEAN_LCM"
+
+    q_qs = extract_qs_elements(q_raw)
+    vit_m = re.search(r'\bVITAMINA\s+([A-Z0-9]+)\b', q_norm)
+    q_vit = vit_m.group(1) if vit_m else None
+
+    # 5. Búsqueda inteligente (Fuzzy + Reglas Médicas y Token Set)
+    if not match_record:
+        best_score = 0
+        candidate = None
+        candidates_to_eval = []
+        for k_c, m in index["chopo_clean"].items():
+            candidates_to_eval.append((k_c, m, "CHOPO"))
+        for k_l, m in index["lcm_clean"].items():
+            candidates_to_eval.append((k_l, m, "LCM"))
+
+        for k_txt, m, origin in candidates_to_eval:
+            # Regla de elementos de Química Sanguínea (no cruzar QS 3 con QS 30)
+            if q_qs is not None:
+                m_qs = extract_qs_elements(k_txt) or extract_qs_elements(m.get("lcm_name", "")) or extract_qs_elements(m.get("chopo_name", "") or "")
+                if m_qs is not None and m_qs != q_qs:
+                    continue
+
+            # Regla de Vitaminas (A, B, C, D, E, etc. no cruzar)
+            if q_vit:
+                m_vit_m = re.search(r'\bVITAMINA\s+([A-Z0-9]+)\b', strip_accents(k_txt).upper())
+                if m_vit_m and m_vit_m.group(1) != q_vit:
+                    continue
+
+            # Puntuación combinada (sort + set)
+            sort_sc = fuzz.token_sort_ratio(q_clean, k_txt)
+            set_sc = fuzz.token_set_ratio(q_clean, k_txt)
+            sc = (sort_sc * 0.4) + (set_sc * 0.6)
+
+            # Bonus por coincidencia exacta de elementos QS
+            if q_qs is not None:
+                m_qs = extract_qs_elements(k_txt) or extract_qs_elements(m.get("lcm_name", ""))
+                if m_qs == q_qs:
+                    sc += 25
+
+            # Bonus por coincidencia de Vitamina
+            if q_vit:
+                m_vit_m = re.search(r'\bVITAMINA\s+([A-Z0-9]+)\b', strip_accents(k_txt).upper())
+                if m_vit_m and m_vit_m.group(1) == q_vit:
+                    sc += 20
+
+            if sc > best_score:
+                best_score = sc
+                candidate = m
+
+        if best_score >= 70 and candidate:
+            match_record = candidate
+            match_source = f"SMART_FUZZY ({round(best_score)}%)"
+
+    if not match_record:
+        return None
+
+    res = dict(match_record)
+    res["lookup_source"] = match_source
+
+    # Enriquecer con cálculo de mejor tarifa LCM
+    lcm_p = float(res.get("lcm_price") or 0.0)
+    best_calc = calculate_best_lcm_price(
+        res.get("lcm_code"),
+        res.get("lcm_name"),
+        lcm_p,
+        with_checkup=True
+    )
+    res["best_pricing"] = best_calc
+
+    # Determinar ganador y análisis comercial
+    chopo_p = res.get("chopo_price_web")
+    if chopo_p is not None and lcm_p > 0:
+        diff_list = round(lcm_p - chopo_p, 2)
+        diff_list_pct = round((diff_list / chopo_p) * 100, 1) if chopo_p > 0 else 0.0
+
+        best_lcm_p = best_calc["best_price"]
+        diff_best = round(best_lcm_p - chopo_p, 2)
+        diff_best_pct = round((diff_best / chopo_p) * 100, 1) if chopo_p > 0 else 0.0
+
+        if best_lcm_p < chopo_p:
+            res["winner"] = "LCM"
+            res["winner_label"] = "🟢 LCM Más Barato"
+            res["savings_amount"] = round(chopo_p - best_lcm_p, 2)
+            res["savings_pct"] = round((res["savings_amount"] / chopo_p) * 100, 1)
+        elif best_lcm_p > chopo_p:
+            res["winner"] = "CHOPO"
+            res["winner_label"] = "🔴 Chopo Más Barato"
+            res["savings_amount"] = round(best_lcm_p - chopo_p, 2)
+            res["savings_pct"] = round((res["savings_amount"] / best_lcm_p) * 100, 1)
+        else:
+            res["winner"] = "EQUAL"
+            res["winner_label"] = "⚖️ Mismo Precio"
+            res["savings_amount"] = 0.0
+            res["savings_pct"] = 0.0
+
+        res["diff_list_mxn"] = diff_list
+        res["diff_list_pct"] = diff_list_pct
+        res["diff_best_mxn"] = diff_best
+        res["diff_best_pct"] = diff_best_pct
+    else:
+        res["winner"] = "UNKNOWN"
+        res["winner_label"] = "⚪ Sin precio comparable"
+        res["savings_amount"] = 0.0
+        res["savings_pct"] = 0.0
+
+    return res
+
+
