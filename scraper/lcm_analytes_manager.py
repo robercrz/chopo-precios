@@ -17,12 +17,21 @@ PROMOTIONS_JSON = PROJECT_ROOT / "config" / "lcm_promotions.json"
 EXCEL_PATH = Path(r"C:\Users\pcone\Downloads\Directorio catalogo maquila 2024.xlsx")
 
 
+_CATALOG_CACHE: Optional[Dict[str, Dict[str, Any]]] = None
+_ADICIONALES_CACHE: Optional[List[Dict[str, Any]]] = None
+
+
 def load_analytes_catalog() -> Dict[str, Dict[str, Any]]:
-    """Carga el catálogo de analitos y perfiles desde JSON (o genera si existe Excel)."""
+    """Carga el catálogo de analitos y perfiles desde JSON (o genera si existe Excel) con caché en memoria."""
+    global _CATALOG_CACHE
+    if _CATALOG_CACHE is not None:
+        return _CATALOG_CACHE
+
     if CATALOG_JSON.exists():
         try:
             with open(CATALOG_JSON, "r", encoding="utf-8") as f:
-                return json.load(f)
+                _CATALOG_CACHE = json.load(f)
+                return _CATALOG_CACHE
         except Exception:
             pass
 
@@ -33,7 +42,8 @@ def load_analytes_catalog() -> Dict[str, Dict[str, Any]]:
             parse_excel()
             if CATALOG_JSON.exists():
                 with open(CATALOG_JSON, "r", encoding="utf-8") as f:
-                    return json.load(f)
+                    _CATALOG_CACHE = json.load(f)
+                    return _CATALOG_CACHE
         except Exception:
             pass
 
@@ -348,13 +358,17 @@ def suggest_checkups_for_studies(selected_studies: List[str]) -> List[Dict[str, 
 
 def get_lcm_adicionales() -> List[Dict[str, Any]]:
     """
-    Retorna los 33 estudios adicionales con tarifa preferencial en Check-Up.
+    Retorna los 33 estudios adicionales con tarifa preferencial en Check-Up con caché en memoria.
     """
+    global _ADICIONALES_CACHE
+    if _ADICIONALES_CACHE is not None:
+        return _ADICIONALES_CACHE
+
     if ADICIONALES_JSON.exists():
         try:
             with open(ADICIONALES_JSON, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                return data
+                _ADICIONALES_CACHE = json.load(f)
+                return _ADICIONALES_CACHE
         except Exception:
             pass
 
@@ -373,6 +387,62 @@ def get_lcm_adicionales() -> List[Dict[str, Any]]:
         {"code": "1412", "name": "Ácido fólico", "price_2025": 490.0, "price_bundle": 350.0, "savings": 140.0},
         {"code": "1413", "name": "Vitamina B12", "price_2025": 490.0, "price_bundle": 350.0, "savings": 140.0}
     ]
+
+
+_LCM_PRICE_LOOKUP: Optional[Dict[str, float]] = None
+
+
+def get_lcm_price_for_study(study_name: str) -> float:
+    """
+    Obtiene el precio público vigente en LCM para un estudio individual
+    desde la base de datos de 1,004 estudios homologados con fallbacks clínicos.
+    """
+    global _LCM_PRICE_LOOKUP
+    if _LCM_PRICE_LOOKUP is None:
+        try:
+            from scraper.lcm_manager import get_consolidated_matches
+            m_data = get_consolidated_matches()
+            lookup = {}
+            for item in m_data.get("matches", []):
+                name = item.get("lcm_name")
+                price = item.get("lcm_price")
+                if name and price is not None:
+                    try:
+                        lookup[normalize_analyte_name(name)] = float(price)
+                    except (ValueError, TypeError):
+                        pass
+            _LCM_PRICE_LOOKUP = lookup
+        except Exception:
+            _LCM_PRICE_LOOKUP = {}
+
+    norm = normalize_analyte_name(study_name)
+    if norm in _LCM_PRICE_LOOKUP:
+        return _LCM_PRICE_LOOKUP[norm]
+
+    for k, v in _LCM_PRICE_LOOKUP.items():
+        if norm in k or k in norm:
+            return v
+
+    upper_s = norm.upper()
+    if "27 ELEMENTOS" in upper_s: return 490.0
+    if "18 ELEMENTOS" in upper_s: return 390.0
+    if "12 ELEMENTOS" in upper_s: return 320.0
+    if "30 ELEMENTOS" in upper_s: return 549.0
+    if "36 ELEMENTOS" in upper_s: return 690.0
+    if "45 ELEMENTOS" in upper_s: return 850.0
+    if "50 ELEMENTOS" in upper_s: return 980.0
+    if "6 ELEMENTOS" in upper_s: return 220.0
+    if "4 ELEMENTOS" in upper_s: return 180.0
+    if "3 ELEMENTOS" in upper_s: return 150.0
+    if "TIROIDEO 2" in upper_s: return 670.0
+    if "TIROIDEO COMPLETO" in upper_s: return 690.0
+    if "BIOMETRIA" in upper_s: return 149.0
+    if "ORINA" in upper_s or "EGO" in upper_s: return 114.0
+    if "VITAMINA D" in upper_s: return 690.0
+    if "LIPID" in upper_s: return 320.0
+    if "PSA" in upper_s or "PROSTAT" in upper_s: return 290.0
+
+    return 350.0
 
 
 def is_study_covered_by_checkup(study_name: str, checkup: Dict[str, Any]) -> bool:

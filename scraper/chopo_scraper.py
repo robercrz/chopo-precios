@@ -222,7 +222,7 @@ class ChopoScraper:
         """
         await self._wait_and_load_products(page)
 
-        products = await page.evaluate("""
+        products = await page.evaluate(r"""
             () => {
                 const items = [];
                 const parsePrice = (text) => {
@@ -287,7 +287,7 @@ class ChopoScraper:
     async def _get_total_pages(self, page) -> int:
         """Detecta el numero total de paginas del catalogo."""
         try:
-            info = await page.evaluate("""
+            info = await page.evaluate(r"""
                 () => {
                     // Buscar el texto "1 - 30 de 1538" para calcular paginas
                     const toolbar = document.querySelector('.toolbar-amount, .toolbar-number, .pager .toolbar-number');

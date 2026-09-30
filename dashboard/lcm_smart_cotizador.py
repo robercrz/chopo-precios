@@ -28,8 +28,32 @@ from scraper.lcm_analytes_manager import (
 )
 
 try:
-    from scraper.lcm_analytes_manager import filter_studies_covered_by_checkup, is_study_covered_by_checkup
+    from scraper.lcm_analytes_manager import (
+        filter_studies_covered_by_checkup,
+        is_study_covered_by_checkup,
+        get_lcm_price_for_study
+    )
 except ImportError:
+    def get_lcm_price_for_study(study_name: str) -> float:
+        upper_s = normalize_analyte_name(study_name).upper()
+        if "27 ELEMENTOS" in upper_s: return 490.0
+        if "18 ELEMENTOS" in upper_s: return 390.0
+        if "12 ELEMENTOS" in upper_s: return 320.0
+        if "30 ELEMENTOS" in upper_s: return 549.0
+        if "36 ELEMENTOS" in upper_s: return 690.0
+        if "45 ELEMENTOS" in upper_s: return 850.0
+        if "50 ELEMENTOS" in upper_s: return 980.0
+        if "6 ELEMENTOS" in upper_s: return 220.0
+        if "4 ELEMENTOS" in upper_s: return 180.0
+        if "3 ELEMENTOS" in upper_s: return 150.0
+        if "TIROIDEO 2" in upper_s: return 670.0
+        if "TIROIDEO COMPLETO" in upper_s: return 690.0
+        if "BIOMETRIA" in upper_s: return 149.0
+        if "ORINA" in upper_s or "EGO" in upper_s: return 114.0
+        if "VITAMINA D" in upper_s: return 690.0
+        if "LIPID" in upper_s: return 320.0
+        if "PSA" in upper_s or "PROSTAT" in upper_s: return 290.0
+        return 350.0
     def is_study_covered_by_checkup(study_name: str, checkup: Dict[str, Any]) -> bool:
         norm_s = normalize_analyte_name(study_name)
         chk_studies = [normalize_analyte_name(s) for s in checkup.get("studies", [])]
@@ -511,22 +535,8 @@ def render_smart_cotizador_tab():
             if active_chk_data and any(normalize_analyte_name(s_name) in normalize_analyte_name(cs) for cs in active_chk_data.get("studies", [])):
                 continue
 
-            # Buscar precio de lista o estimado
-            # Para fines de cotización, permitir ingresar o ajustar el precio si no está fijado
-            s_price = 350.0  # valor base estimado para estudios individuales
-            upper_s = s_name.upper()
-            if "27 ELEMENTOS" in upper_s: s_price = 490.0
-            elif "18 ELEMENTOS" in upper_s: s_price = 390.0
-            elif "30 ELEMENTOS" in upper_s: s_price = 549.0
-            elif "36 ELEMENTOS" in upper_s: s_price = 690.0
-            elif "45 ELEMENTOS" in upper_s: s_price = 850.0
-            elif "50 ELEMENTOS" in upper_s: s_price = 980.0
-            elif "TIROIDEO 2" in upper_s: s_price = 450.0
-            elif "TIROIDEO COMPLETO" in upper_s: s_price = 590.0
-            elif "LÍPIDOS" in upper_s or "LIPIDOS" in upper_s: s_price = 280.0
-            elif "BIOMETRÍA" in upper_s or "BIOMETRIA" in upper_s: s_price = 149.0
-            elif "ORINA" in upper_s or "EGO" in upper_s: s_price = 100.0
-            elif "VITAMINA D" in upper_s: s_price = 690.0
+            # Obtener precio público oficial de LCM para este estudio
+            s_price = get_lcm_price_for_study(s_name)
 
             total_quote += s_price
             total_regular += s_price

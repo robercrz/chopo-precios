@@ -2091,7 +2091,7 @@ def render_discounts_tab(prices: list):
         if pd.notna(orig) and float(orig) > p:
             list_p = float(orig)
             saving = list_p - p
-            pct = (saving / list_p) * 100.0
+            pct = (saving / list_p) * 100.0 if list_p > 0 else 0.0
             is_est = False
         else:
             list_p = round(p / 0.90, 2)
@@ -2325,7 +2325,7 @@ def render_quotation_tab(prices: list):
         orig = row.get("price_original")
         if pd.notna(orig) and float(orig) > p:
             lp = float(orig)
-            disc = ((lp - p) / lp) * 100.0
+            disc = ((lp - p) / lp) * 100.0 if lp > 0 else 0.0
         else:
             lp = round(p / 0.90, 2)
             disc = 10.0
