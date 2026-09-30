@@ -14,9 +14,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 import io
+import re
 import unicodedata
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Any, List, Dict, Set
 from loguru import logger
 
 from db.database import (
@@ -1337,8 +1338,26 @@ def render_changes_tab(changes: list):
     st.dataframe(df, use_container_width=True)
 
 
-# ── Tab 0: Favoritos ───────────────────────────────────────────────────────────
 # ── Tab 0: Favoritos (Inteligencia Dual Chopo vs LCM) ─────────────────────────
+def _clean_price(val: Any) -> Optional[float]:
+    if val is None or pd.isna(val):
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    try:
+        cleaned = re.sub(r'[^\d.]', '', str(val).strip())
+        return float(cleaned) if cleaned else None
+    except Exception:
+        return None
+
+
+def _fmt_price(val: Any) -> str:
+    p = _clean_price(val)
+    if p is None:
+        return "N/D"
+    return f"${p:,.2f}"
+
+
 def render_favorites_tab(prices: list, **kwargs):
     user_fav_names = get_user_favorite_names()
 
@@ -1354,8 +1373,10 @@ def render_favorites_tab(prices: list, **kwargs):
     for name in sorted(user_fav_names):
         db_f = db_favs_by_name.get(name, {})
         pr_f = prices_by_name.get(name, {})
-        cur_p = pr_f.get("price") if pr_f.get("price") is not None else db_f.get("current_price")
-        cur_p_raw = pr_f.get("price_raw") if pr_f.get("price_raw") is not None else db_f.get("current_price_raw")
+        raw_p = pr_f.get("price") if pr_f.get("price") is not None else db_f.get("current_price")
+        raw_p_list = pr_f.get("price_raw") if pr_f.get("price_raw") is not None else db_f.get("current_price_raw")
+        cur_p = _clean_price(raw_p)
+        cur_p_raw = _clean_price(raw_p_list)
 
         # Buscar match en LCM
         lcm_match = find_lcm_match_for_study(name, lcm_index)
@@ -1364,17 +1385,17 @@ def render_favorites_tab(prices: list, **kwargs):
         if has_lcm:
             lcm_code = lcm_match.get("lcm_code")
             lcm_name = lcm_match.get("lcm_name")
-            lcm_p = float(lcm_match.get("lcm_price") or 0.0)
+            lcm_p = _clean_price(lcm_match.get("lcm_price")) or 0.0
             best_pricing = lcm_match.get("best_pricing", {})
             winner = lcm_match.get("winner", "UNKNOWN")
             winner_label = lcm_match.get("winner_label", "⚪ Sin comparativa")
-            savings_amount = lcm_match.get("savings_amount", 0.0)
-            savings_pct = lcm_match.get("savings_pct", 0.0)
+            savings_amount = _clean_price(lcm_match.get("savings_amount")) or 0.0
+            savings_pct = _clean_price(lcm_match.get("savings_pct")) or 0.0
             # Si no teníamos precio Chopo por scrape, intentar tomarlo del match
             if cur_p is None and lcm_match.get("chopo_price_web"):
-                cur_p = float(lcm_match.get("chopo_price_web"))
+                cur_p = _clean_price(lcm_match.get("chopo_price_web"))
             if cur_p_raw is None and lcm_match.get("chopo_price_list"):
-                cur_p_raw = float(lcm_match.get("chopo_price_list"))
+                cur_p_raw = _clean_price(lcm_match.get("chopo_price_list"))
         else:
             lcm_code = None
             lcm_name = None
@@ -1705,13 +1726,13 @@ def render_favorites_tab(prices: list, **kwargs):
                         <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:8px 10px;">
                             <span style="font-size:0.7rem; color:#16a34a; font-weight:700; text-transform:uppercase; display:block;">Precio Web</span>
                             <span style="font-size:1.25rem; font-weight:800; color:#16a34a;">
-                                {'$' + f"{price:,.2f}" if price else "N/D"}
+                                {_fmt_price(price)}
                             </span>
                         </div>
                         <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:8px 10px;">
                             <span style="font-size:0.7rem; color:#64748b; font-weight:700; text-transform:uppercase; display:block;">Mostrador</span>
                             <span style="font-size:1.25rem; font-weight:800; color:#475569;">
-                                {'$' + f"{price_raw:,.2f}" if price_raw else "N/D"}
+                                {_fmt_price(price_raw)}
                             </span>
                         </div>
                     </div>
@@ -1722,11 +1743,13 @@ def render_favorites_tab(prices: list, **kwargs):
                     delta_chg_str = f"+${change:.2f} (+{change_pct:.1f}%)" if change > 0 else f"-${abs(change):.2f} ({change_pct:.1f}%)"
                     st.caption(f"📈 Variación reciente en Chopo: **{delta_chg_str}**")
 
-                if threshold and price:
-                    if price > threshold:
-                        st.warning(f"⚠️ El precio de Chopo (${price:,.2f}) supera tu umbral de alerta (${threshold:,.2f})")
+                thr_num = _clean_price(threshold)
+                p_num = _clean_price(price)
+                if thr_num and p_num:
+                    if p_num > thr_num:
+                        st.warning(f"⚠️ El precio de Chopo (${p_num:,.2f}) supera tu umbral de alerta (${thr_num:,.2f})")
                     else:
-                        st.caption(f"✅ Precio bajo umbral de ${threshold:,.2f}")
+                        st.caption(f"✅ Precio bajo umbral de ${thr_num:,.2f}")
 
             # ── 2. Divisor VS ─────────────────────────────────────────────────
             with col_vs:
@@ -1741,8 +1764,8 @@ def render_favorites_tab(prices: list, **kwargs):
 
                     extra_badge_html = ""
                     if best_calc.get("has_promo_price") or best_calc.get("has_bundle_price"):
-                        p_promo_str = f"${best_calc['price_promo']:,.2f}" if best_calc.get("has_promo_price") else "N/A"
-                        p_bund_str = f"${best_calc['price_bundle']:,.2f}" if best_calc.get("has_bundle_price") else "N/A"
+                        p_promo_str = _fmt_price(best_calc.get('price_promo')) if best_calc.get("has_promo_price") else "N/A"
+                        p_bund_str = _fmt_price(best_calc.get('price_bundle')) if best_calc.get("has_bundle_price") else "N/A"
                         extra_badge_html = f"""
                         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:8px;">
                             <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:6px 10px;">
@@ -1771,13 +1794,13 @@ def render_favorites_tab(prices: list, **kwargs):
                             <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:8px 10px;">
                                 <span style="font-size:0.7rem; color:#64748b; font-weight:700; text-transform:uppercase; display:block;">Precio de Lista</span>
                                 <span style="font-size:1.25rem; font-weight:800; color:#0284c7;">
-                                    {'$' + f"{lcm_p:,.2f}" if lcm_p else "N/D"}
+                                    {_fmt_price(lcm_p)}
                                 </span>
                             </div>
                             <div style="background:#ffffff; border:1px solid #6ee7b7; border-radius:6px; padding:8px 10px;">
                                 <span style="font-size:0.7rem; color:#047857; font-weight:700; text-transform:uppercase; display:block;">💡 Mejor Tarifa LCM</span>
                                 <span style="font-size:1.25rem; font-weight:800; color:#059669;">
-                                    {'$' + f"{best_calc.get('best_price', 0):,.2f}" if best_calc.get('best_price') else "N/D"}
+                                    {_fmt_price(best_calc.get('best_price'))}
                                 </span>
                             </div>
                         </div>
@@ -1797,10 +1820,11 @@ def render_favorites_tab(prices: list, **kwargs):
 
             # ── Veredicto Comercial ───────────────────────────────────────────
             st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-            if has_lcm and price and best_calc.get("best_price"):
-                best_lcm_p = best_calc["best_price"]
-                diff_val = price - best_lcm_p
-                diff_p = round((abs(diff_val) / price) * 100, 1) if price > 0 else 0
+            p_val = _clean_price(price)
+            best_lcm_val = _clean_price(best_calc.get("best_price"))
+            if has_lcm and p_val and best_lcm_val:
+                diff_val = p_val - best_lcm_val
+                diff_p = round((abs(diff_val) / p_val) * 100, 1) if p_val > 0 else 0
 
                 if diff_val > 0:
                     st.success(f"""
