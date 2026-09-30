@@ -377,9 +377,19 @@ def _check_and_show_last_result():
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 def render_sidebar(labs: list, prices: list) -> dict:
     """Renderiza la sidebar con filtros. Retorna filtros seleccionados."""
-    st.sidebar.image(
-        "https://www.chopo.com.mx/static/version1790298380/frontend/AgileThought/Chopo/es_MX/images/logo.svg",
-        use_column_width=True,
+    st.sidebar.markdown(
+        """
+        <div style="text-align: center; padding: 10px 0 5px 0;">
+            <div style="display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; background: #eaf2f8; border-radius: 50%; margin-bottom: 6px;">
+                <span style="font-size: 1.5rem;">🔬</span>
+            </div>
+            <h2 style="color: #1a5276; font-size: 1.4rem; margin: 0; font-weight: 800; letter-spacing: -0.5px;">
+                CHOPO
+            </h2>
+            <p style="color: #7f8c8d; font-size: 0.8rem; margin: 0; font-weight: 600;">Price Intelligence · Mérida</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
     st.sidebar.markdown("---")
