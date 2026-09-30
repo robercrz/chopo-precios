@@ -48,6 +48,91 @@ from scraper.scheduler_manager import (
     save_config as save_scheduler_config,
 )
 
+# ── Manejador de Almacenamiento en el Navegador (LocalStorage / Cookies) ────────
+try:
+    import extra_streamlit_components as stx
+    def get_cookie_manager():
+        return stx.CookieManager(key="chopo_cm")
+except Exception as e:
+    logger.debug(f"CookieManager no disponible: {e}")
+    def get_cookie_manager():
+        return None
+
+
+def get_user_favorite_names(cm=None) -> set:
+    """Obtiene los nombres de favoritos del usuario desde cookies/sesión con respaldo en DB."""
+    if "user_favorites_set" in st.session_state and st.session_state["user_favorites_set"] is not None:
+        return st.session_state["user_favorites_set"]
+
+    favs = set()
+    if cm is not None:
+        try:
+            raw = cm.get("chopo_favs")
+            if raw:
+                import json
+                parsed = json.loads(raw) if isinstance(raw, str) else raw
+                if isinstance(parsed, (list, set)):
+                    favs.update(parsed)
+        except Exception as e:
+            logger.debug(f"Error leyendo cookies de favoritos: {e}")
+
+    if not favs:
+        db_favs = get_favorite_names()
+        if db_favs:
+            favs.update(db_favs)
+
+    st.session_state["user_favorites_set"] = favs
+    return favs
+
+
+def add_user_fav(study_name: str, lab_key: str = "chopo_yucatan", branch: str = None, cm=None):
+    """Guarda un favorito en el navegador del usuario (cookie de 365 días), en sesión y en SQLite."""
+    import time
+    favs = get_user_favorite_names(cm)
+    favs.add(study_name)
+    st.session_state["user_favorites_set"] = favs
+
+    if cm is not None:
+        try:
+            import json
+            import datetime
+            cm.set(
+                "chopo_favs",
+                json.dumps(list(favs)),
+                key=f"set_fav_{int(time.time()*1000)}",
+                expires_at=datetime.datetime.now() + datetime.timedelta(days=365)
+            )
+        except Exception as e:
+            logger.debug(f"Error guardando cookie de favoritos: {e}")
+
+    add_favorite(study_name, lab_key, branch)
+    st.toast(f"⭐ '{study_name}' guardado en los favoritos de tu navegador!")
+
+
+def remove_user_fav(study_name: str, lab_key: str = "chopo_yucatan", branch: str = None, cm=None):
+    """Elimina un favorito del navegador del usuario, de la sesión y de SQLite."""
+    import time
+    favs = get_user_favorite_names(cm)
+    favs.discard(study_name)
+    st.session_state["user_favorites_set"] = favs
+
+    if cm is not None:
+        try:
+            import json
+            import datetime
+            cm.set(
+                "chopo_favs",
+                json.dumps(list(favs)),
+                key=f"del_fav_{int(time.time()*1000)}",
+                expires_at=datetime.datetime.now() + datetime.timedelta(days=365)
+            )
+        except Exception as e:
+            logger.debug(f"Error eliminando cookie de favoritos: {e}")
+
+    remove_favorite(study_name, lab_key, branch)
+    st.toast(f"'{study_name}' removido de tus favoritos")
+
+
 # ── Configuración de página ────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Chopo Price Intelligence",
@@ -421,7 +506,7 @@ def render_kpis(prices: list, changes: list, scrape_log: list):
 
 
 # ── Tab 1: Catálogo de Precios ─────────────────────────────────────────────────
-def render_catalog_tab(prices: list, filters: dict):
+def render_catalog_tab(prices: list, filters: dict, cm=None):
     st.markdown("### 📋 Catálogo de Estudios y Precios")
 
     df = pd.DataFrame(prices)
@@ -435,7 +520,7 @@ def render_catalog_tab(prices: list, filters: dict):
             lambda n: classify_study(n) if pd.notna(n) else "Otros"
         )
 
-    fav_names = get_favorite_names()
+    fav_names = get_user_favorite_names(cm)
 
     # ── Callbacks para evitar st.rerun() y mantener la pestaña activa ──────────
     def _cb_clear_search():
@@ -455,12 +540,10 @@ def render_catalog_tab(prices: list, filters: dict):
         st.session_state["cat_search_input_field"] = name
 
     def _cb_add_fav(name, lkey, br):
-        add_favorite(name, lkey, br)
-        st.toast(f"⭐ '{name}' agregado a favoritos!")
+        add_user_fav(name, lkey, br, cm=cm)
 
     def _cb_remove_fav(name, lkey, br):
-        remove_favorite(name, lkey, br)
-        st.toast(f"'{name}' removido de favoritos")
+        remove_user_fav(name, lkey, br, cm=cm)
 
     if "catalog_active_study" not in st.session_state:
         st.session_state["catalog_active_study"] = None
@@ -742,7 +825,7 @@ def render_catalog_tab(prices: list, filters: dict):
                         use_container_width=True
                     )
 
-            _render_study_detail(row, df_all_catalog, fav_names)
+            _render_study_detail(row, df_all_catalog, fav_names, cm=cm)
     else:
         st.caption("💡 **Tip:** Escribe cualquier palabra clave arriba (ej. *vitamina*), haz clic en una fila de la tabla o usa las píldoras de acceso rápido para ver el análisis del estudio y marcarlo como favorito.")
 
@@ -761,7 +844,7 @@ def render_catalog_tab(prices: list, filters: dict):
             st.success(f"CSV guardado en: `{filepath}`")
 
 
-def _render_study_detail(row: "pd.Series", df: "pd.DataFrame", fav_names: set):
+def _render_study_detail(row: "pd.Series", df: "pd.DataFrame", fav_names: set, cm=None):
     """
     Panel de detalle completo de un estudio clínico seleccionado.
     Muestra precio, categoría, comparación vs categoría, historial, y acción de favorito.
@@ -839,12 +922,10 @@ def _render_study_detail(row: "pd.Series", df: "pd.DataFrame", fav_names: set):
         is_fav = study_name in fav_names
 
         def _cb_sub_add_fav():
-            add_favorite(study_name, lab_key, branch or None)
-            st.toast(f"⭐ '{study_name}' agregado a favoritos!")
+            add_user_fav(study_name, lab_key, branch or None, cm=cm)
 
         def _cb_sub_remove_fav():
-            remove_favorite(study_name, lab_key, branch or None)
-            st.toast(f"'{study_name}' removido de favoritos")
+            remove_user_fav(study_name, lab_key, branch or None, cm=cm)
 
         if is_fav:
             st.button(
@@ -1118,16 +1199,55 @@ def render_changes_tab(changes: list):
 
 
 # ── Tab 0: Favoritos ───────────────────────────────────────────────────────────
-def render_favorites_tab(prices: list):
-    st.markdown("### ⭐ Estudios Favoritos")
-    st.caption("Estudios que monitoreas de cerca. Agrégalos desde el tab Catálogo.")
+def render_favorites_tab(prices: list, cm=None):
+    user_fav_names = get_user_favorite_names(cm)
 
-    favorites = get_favorites()
+    c_fav_hdr, c_fav_export = st.columns([4, 2])
+    with c_fav_hdr:
+        st.markdown("### ⭐ Mis Estudios Favoritos")
+        st.caption("🔒 Guardados de forma privada y permanente en la memoria de este navegador.")
+    with c_fav_export:
+        if user_fav_names:
+            import json
+            st.download_button(
+                "💾 Respaldar Favoritos (JSON)",
+                data=json.dumps(list(user_fav_names), indent=2, ensure_ascii=False),
+                file_name="mis_favoritos_chopo.json",
+                mime="application/json",
+                use_container_width=True,
+                help="Descarga tus favoritos para guardarlos o transferirlos a otro celular o computadora."
+            )
+
+    # Cargar registros desde DB y completar con los del navegador
+    db_favs = get_favorites()
+    db_favs_by_name = {f["study_name"]: f for f in db_favs}
+    prices_by_name = {p["study_name"]: p for p in prices if "study_name" in p}
+
+    favorites = []
+    for name in sorted(user_fav_names):
+        if name in db_favs_by_name:
+            favorites.append(db_favs_by_name[name])
+        else:
+            p = prices_by_name.get(name, {})
+            favorites.append({
+                "id": None,
+                "study_name": name,
+                "lab_key": p.get("lab_key", "chopo_yucatan"),
+                "branch": p.get("branch", ""),
+                "lab_name": p.get("lab_name", "Chopo Mérida"),
+                "current_price": p.get("price"),
+                "current_price_raw": p.get("price_raw"),
+                "price_change": None,
+                "price_change_pct": None,
+                "created_at": str(datetime.now())[:10],
+                "note": "",
+                "alert_threshold": None,
+            })
 
     if not favorites:
         st.info(
-            "Aún no tienes favoritos. Ve al tab **Catálogo**, busca un estudio "
-            "y haz clic en **⭐ Agregar a Favoritos**."
+            "Aún no tienes favoritos guardados en este navegador. Ve a la pestaña **Catálogo**, busca cualquier estudio "
+            "y haz clic en **⭐ MARCAR COMO FAVORITO** para tenerlo siempre aquí."
         )
         return
 
@@ -1215,10 +1335,16 @@ def render_favorites_tab(prices: list):
                     st.rerun()
 
             with col_actions:
-                if st.button("🗑️ Quitar de favoritos", key=f"del_{name}", type="secondary"):
-                    remove_favorite(name, lab_key, branch or None)
-                    st.success(f"'{name}' eliminado de favoritos")
-                    st.rerun()
+                def _cb_fav_remove_from_tab(s_name=name, l_key=lab_key, br=branch):
+                    remove_user_fav(s_name, l_key, br or None, cm=cm)
+
+                st.button(
+                    "🗑️ Quitar de favoritos",
+                    key=f"del_{name}",
+                    type="secondary",
+                    on_click=_cb_fav_remove_from_tab,
+                    use_container_width=True
+                )
 
             # Mini historial de precio
             try:
@@ -2426,6 +2552,8 @@ def main():
 
     prices, labs, changes, scrape_log = load_data()
 
+    cm = get_cookie_manager()
+
     render_header()
     st.markdown("---")
 
@@ -2450,9 +2578,9 @@ def main():
         ])
 
         with tab0:
-            render_favorites_tab(prices)
+            render_favorites_tab(prices, cm=cm)
         with tab1:
-            render_catalog_tab(prices, filters)
+            render_catalog_tab(prices, filters, cm=cm)
         with tab2:
             render_discounts_tab(prices)
         with tab3:
@@ -2479,9 +2607,9 @@ def main():
         ])
 
         with tab0:
-            render_favorites_tab(prices)
+            render_favorites_tab(prices, cm=cm)
         with tab1:
-            render_catalog_tab(prices, filters)
+            render_catalog_tab(prices, filters, cm=cm)
         with tab2:
             render_discounts_tab(prices)
         with tab3:

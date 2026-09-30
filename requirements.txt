@@ -3,7 +3,8 @@
 # ============================================================
 
 # --- Dashboard / UI ---
-streamlit==1.35.0
+streamlit>=1.40.0
+extra-streamlit-components>=0.1.80
 plotly==5.22.0
 
 # --- Exportación Excel ---
