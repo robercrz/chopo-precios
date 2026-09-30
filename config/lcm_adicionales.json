@@ -1,0 +1,200 @@
+[
+  {
+    "code": "756",
+    "name": "Hemoglobina glicosilada",
+    "price_2025": 290.0,
+    "price_bundle": 195.0
+  },
+  {
+    "code": "1592",
+    "name": "Rayos X tórax PA",
+    "price_2025": 690.0,
+    "price_bundle": 400.0
+  },
+  {
+    "code": "1344",
+    "name": "Ultrasonido abdomino-pélvico",
+    "price_2025": 1628.0,
+    "price_bundle": 990.0
+  },
+  {
+    "code": "1374",
+    "name": "Ultrasonido pélvico endovaginal",
+    "price_2025": 1190.0,
+    "price_bundle": 830.0
+  },
+  {
+    "code": "1352",
+    "name": "Ultrasonido de mama",
+    "price_2025": 1021.0,
+    "price_bundle": 740.0
+  },
+  {
+    "code": "1375",
+    "name": "Ultrasonido pélvico suprapúbico",
+    "price_2025": 1021.0,
+    "price_bundle": 740.0
+  },
+  {
+    "code": "1353",
+    "name": "Ultrasonido de mama + pélvico",
+    "price_2025": 1717.0,
+    "price_bundle": 1200.0
+  },
+  {
+    "code": "1354",
+    "name": "Ultrasonido de mama + pélvico endovaginal",
+    "price_2025": 1858.0,
+    "price_bundle": 1300.0
+  },
+  {
+    "code": "1362",
+    "name": "Ultrasonido tiroides",
+    "price_2025": 1021.0,
+    "price_bundle": 740.0
+  },
+  {
+    "code": "1347",
+    "name": "Ultrasonido carotideo (Doppler)",
+    "price_2025": 3003.0,
+    "price_bundle": 1390.0
+  },
+  {
+    "code": "1320",
+    "name": "Electrocardiograma en reposo",
+    "price_2025": 490.0,
+    "price_bundle": 320.0
+  },
+  {
+    "code": "1414",
+    "name": "Vitamina D (25-OH) total",
+    "price_2025": 690.0,
+    "price_bundle": 640.0
+  },
+  {
+    "code": "702",
+    "name": "Antígeno prostático específico",
+    "price_2025": 290.0,
+    "price_bundle": 260.0
+  },
+  {
+    "code": "1475",
+    "name": "Coproparasitoscópico",
+    "price_2025": 115.0,
+    "price_bundle": 99.0
+  },
+  {
+    "code": "1478",
+    "name": "Coprológico",
+    "price_2025": 280.0,
+    "price_bundle": 249.0
+  },
+  {
+    "code": "1585",
+    "name": "Perfil tiroideo",
+    "price_2025": 690.0,
+    "price_bundle": 620.0
+  },
+  {
+    "code": "1400",
+    "name": "Perfil hormonal femenino",
+    "price_2025": 1090.0,
+    "price_bundle": 980.0
+  },
+  {
+    "code": "1402",
+    "name": "Marcadores de antígeno prostático",
+    "price_2025": 650.0,
+    "price_bundle": 590.0
+  },
+  {
+    "code": "710",
+    "name": "Testosterona total",
+    "price_2025": 320.0,
+    "price_bundle": 290.0
+  },
+  {
+    "code": "711",
+    "name": "Testosterona libre",
+    "price_2025": 430.0,
+    "price_bundle": 390.0
+  },
+  {
+    "code": "767",
+    "name": "Proteína C reactiva ultrasensible",
+    "price_2025": 490.0,
+    "price_bundle": 300.0
+  },
+  {
+    "code": "1040",
+    "name": "Dehidroepiandrosterona sulfatada (DHEA-SO4)",
+    "price_2025": 376.0,
+    "price_bundle": 290.0
+  },
+  {
+    "code": "1180",
+    "name": "Detección virus del papiloma humano (VPH) por PCR",
+    "price_2025": 1990.0,
+    "price_bundle": 1499.0
+  },
+  {
+    "code": "1905",
+    "name": "Panel detección infecciones de transimisión sexual (ITS 14) por PCR",
+    "price_2025": 4100.0,
+    "price_bundle": 2990.0
+  },
+  {
+    "code": "1717",
+    "name": "Panel detección infecciones de transmisión sexual (ITS 7) por PCR",
+    "price_2025": 2300.0,
+    "price_bundle": 1500.0
+  },
+  {
+    "code": "695",
+    "name": "Índice HOMA",
+    "price_2025": 390.0,
+    "price_bundle": 261.0
+  },
+  {
+    "code": "1199",
+    "name": "Procalcitonina",
+    "price_2025": 839.0,
+    "price_bundle": 698.0
+  },
+  {
+    "code": "1309",
+    "name": "Proteína C reactiva",
+    "price_2025": 172.0,
+    "price_bundle": 138.0
+  },
+  {
+    "code": "969",
+    "name": "Androstenediona",
+    "price_2025": 476.0,
+    "price_bundle": 381.0
+  },
+  {
+    "code": "682",
+    "name": "Antígeno CA 125",
+    "price_2025": 695.0,
+    "price_bundle": 556.0
+  },
+  {
+    "code": "683",
+    "name": "Antígeno CA 15-3",
+    "price_2025": 696.0,
+    "price_bundle": 558.0
+  },
+  {
+    "code": "684",
+    "name": "Antígeno CA 19-9",
+    "price_2025": 720.0,
+    "price_bundle": 576.0
+  },
+  {
+    "code": "1257",
+    "name": "T.P y T.T.P.",
+    "price_2025": 320.0,
+    "price_bundle": 288.0
+  }
+]

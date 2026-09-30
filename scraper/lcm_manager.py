@@ -23,7 +23,9 @@ DB_PATH = BASE_DIR / "db" / "chopo_prices.db"
 
 OVERRIDES_FILE = CONFIG_DIR / "lcm_price_overrides.json"
 PROMOTIONS_FILE = CONFIG_DIR / "lcm_promotions.json"
+ADICIONALES_FILE = CONFIG_DIR / "lcm_adicionales.json"
 BASE_MATCHES_FILE = DATA_LCM_DIR / "lcm_chopo_matches.json"
+
 
 
 def ensure_dirs():
@@ -273,6 +275,174 @@ def _get_default_october_promotions() -> List[Dict[str, Any]]:
     for p in base:
         evaluate_promo_validity(p)
     return base
+
+
+# ── 2B. GESTOR DE ESTUDIOS ADICIONALES Y MOTOR DE MEJOR PRECIO ────────────
+
+def load_adicionales() -> List[Dict[str, Any]]:
+    """Carga los 33 estudios adicionales con precio especial de paquete."""
+    ensure_dirs()
+    if ADICIONALES_FILE.exists():
+        try:
+            with open(ADICIONALES_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+
+    # Extraer desde BASE_MATCHES_FILE
+    if BASE_MATCHES_FILE.exists():
+        try:
+            with open(BASE_MATCHES_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                adicionales = data.get("adicionales", [])
+                if adicionales:
+                    save_all_adicionales(adicionales)
+                    return adicionales
+        except Exception:
+            pass
+    return []
+
+
+def save_all_adicionales(adicionales: List[Dict[str, Any]]) -> bool:
+    ensure_dirs()
+    try:
+        with open(ADICIONALES_FILE, "w", encoding="utf-8") as f:
+            json.dump(adicionales, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception:
+        return False
+
+
+def get_adicionales_lookup() -> Dict[str, Dict[str, Any]]:
+    """
+    Retorna un diccionario indexado tanto por código como por nombre normalizado
+    mapeando al estudio adicional y su price_bundle.
+    """
+    adicionales = load_adicionales()
+    lookup = {}
+    for a in adicionales:
+        code_k = str(a.get("code", "")).strip()
+        name_k = clean_medical_text(str(a.get("name", "")))
+        if code_k:
+            lookup[code_k] = a
+        if name_k:
+            lookup[name_k] = a
+    return lookup
+
+
+def get_active_promos_lookup() -> Dict[str, Dict[str, Any]]:
+    """
+    Retorna un diccionario mapeando nombre de estudio a la promoción activa más económica.
+    """
+    promos = load_promotions()
+    active_promos = {}
+    for p in promos:
+        status = p.get("status")
+        if status in ("ACTIVE", "PERMANENT", "EXPIRING_SOON"):
+            price = p.get("price_promo")
+            if price is None:
+                continue
+            studies = p.get("studies", [])
+            p_name = p.get("name", "")
+            all_targets = list(studies) + [p_name]
+            for t in all_targets:
+                norm_t = clean_medical_text(t)
+                if not norm_t:
+                    continue
+                if norm_t not in active_promos or price < active_promos[norm_t]["price"]:
+                    active_promos[norm_t] = {
+                        "promo_id": p.get("id"),
+                        "promo_name": p_name,
+                        "price": float(price),
+                        "category": p.get("category", "")
+                    }
+    return active_promos
+
+
+def calculate_best_lcm_price(
+    study_code: str,
+    study_name: str,
+    price_list: float,
+    with_checkup: bool = False
+) -> Dict[str, Any]:
+    """
+    Aplica la regla comercial de LCM del Mejor Precio Garantizado:
+    - Compara Precio de Lista vs Precio Adicional (si aplica con Check-Up) vs Precio Promoción Activa.
+    - Respeta SIEMPRE el precio más bajo para el paciente.
+    """
+    code_k = str(study_code or "").strip()
+    name_norm = clean_medical_text(study_name or "")
+
+    adic_lookup = get_adicionales_lookup()
+    promo_lookup = get_active_promos_lookup()
+
+    adic_info = adic_lookup.get(code_k) or adic_lookup.get(name_norm)
+    if not adic_info and name_norm:
+        for k, v in adic_lookup.items():
+            if fuzz.token_sort_ratio(name_norm, k) >= 88:
+                adic_info = v
+                break
+
+    promo_info = promo_lookup.get(name_norm)
+    if not promo_info and name_norm:
+        for k, v in promo_lookup.items():
+            if fuzz.token_sort_ratio(name_norm, k) >= 88:
+                promo_info = v
+                break
+
+    price_bundle = float(adic_info["price_bundle"]) if (adic_info and adic_info.get("price_bundle") is not None) else None
+    price_promo = float(promo_info["price"]) if (promo_info and promo_info.get("price") is not None) else None
+
+    # Candidatos disponibles
+    candidates = [("LISTA", price_list, "Precio regular de lista")]
+
+    if with_checkup and price_bundle is not None:
+        candidates.append(("ADICIONAL", price_bundle, f"Precio especial al añadir con Check-Up (${price_bundle:,.2f})"))
+
+    if price_promo is not None:
+        p_name = promo_info.get("promo_name", "Promoción")
+        candidates.append(("PROMOCION", price_promo, f"Precio en promoción '{p_name}' (${price_promo:,.2f})"))
+
+    # Encontrar el menor precio
+    sorted_candidates = sorted(candidates, key=lambda x: x[1])
+    best_rule, best_price, best_desc = sorted_candidates[0]
+
+    # Explicación
+    if best_rule == "PROMOCION":
+        if with_checkup and price_bundle is not None and price_promo < price_bundle:
+            diff_bundle = price_bundle - price_promo
+            explanation = f"🎉 **Aplica Precio Promoción (${price_promo:,.2f})**: Es ${diff_bundle:,.2f} más barato que el precio adicional de paquete (${price_bundle:,.2f})."
+        else:
+            diff_list = price_list - price_promo
+            explanation = f"🎉 **Aplica Precio Promoción (${price_promo:,.2f})**: Ahorro de ${diff_list:,.2f} frente a lista regular (${price_list:,.2f})."
+    elif best_rule == "ADICIONAL":
+        if price_promo is not None and price_bundle < price_promo:
+            diff_promo = price_promo - price_bundle
+            explanation = f"💡 **Aplica Precio Adicional (${price_bundle:,.2f})**: Al incluirse en Check-Up, es ${diff_promo:,.2f} más barato que la promo individual (${price_promo:,.2f})."
+        else:
+            diff_list = price_list - price_bundle
+            explanation = f"💡 **Aplica Precio Adicional (${price_bundle:,.2f})**: Descuento especial de Check-Up (Ahorro de ${diff_list:,.2f} frente a lista)."
+    else:
+        explanation = f"📋 **Precio de Lista Regular (${price_list:,.2f})**"
+        if not with_checkup and price_bundle is not None:
+            explanation += f" *(Disponible a ${price_bundle:,.2f} si el paciente lo añade a un Check-Up)*."
+
+    savings_mxn = round(price_list - best_price, 2)
+    savings_pct = round((savings_mxn / price_list) * 100, 1) if price_list > 0 else 0.0
+
+    return {
+        "price_list": price_list,
+        "price_bundle": price_bundle,
+        "price_promo": price_promo,
+        "best_price": best_price,
+        "rule": best_rule,
+        "explanation": explanation,
+        "has_bundle_price": price_bundle is not None,
+        "has_promo_price": price_promo is not None,
+        "savings_mxn": savings_mxn,
+        "savings_pct": savings_pct
+    }
+
 
 
 # ── 3. DETECTOR INTELIGENTE DE COLUMNAS PARA ARCHIVOS SUBIDOS ─────────────────

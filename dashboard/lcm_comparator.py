@@ -24,7 +24,11 @@ from scraper.lcm_manager import (
     detect_columns,
     process_uploaded_catalog,
     get_consolidated_matches,
+    load_adicionales,
+    calculate_best_lcm_price,
+    get_adicionales_lookup,
 )
+
 
 DATA_FILE = Path(__file__).parent.parent / "data" / "lcm" / "lcm_chopo_matches.json"
 
@@ -179,6 +183,41 @@ def render_lcm_comparator_tab(chopo_prices: list):
                     </div>
                     """
 
+                # Cálculo de Mejor Tarifa (Lista vs Adicional en Check-up vs Promo Activa)
+                best_calc = calculate_best_lcm_price(
+                    item.get("lcm_code"),
+                    item.get("lcm_name"),
+                    float(item.get("lcm_price") or 0.0),
+                    with_checkup=True
+                )
+
+                extra_rates_html = ""
+                if best_calc["has_bundle_price"] or best_calc["has_promo_price"]:
+                    p_bundle_str = f"${best_calc['price_bundle']:,.2f}" if best_calc["has_bundle_price"] else "N/A"
+                    p_promo_str = f"${best_calc['price_promo']:,.2f}" if best_calc["has_promo_price"] else "N/A"
+                    extra_rates_html = f"""
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:8px;">
+                        <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:6px 10px;">
+                            <span style="font-size:0.7rem; color:#64748b; font-weight:700; display:block;">En Check-Up (Adicional)</span>
+                            <span style="font-size:1.05rem; font-weight:800; color:{'#0284c7' if best_calc['has_bundle_price'] else '#94a3b8'};">{p_bundle_str}</span>
+                        </div>
+                        <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:6px 10px;">
+                            <span style="font-size:0.7rem; color:#64748b; font-weight:700; display:block;">Promoción Activa</span>
+                            <span style="font-size:1.05rem; font-weight:800; color:{'#16a34a' if best_calc['has_promo_price'] else '#94a3b8'};">{p_promo_str}</span>
+                        </div>
+                    </div>
+                    <div style="background:#ecfdf5; border:1px solid #6ee7b7; border-radius:8px; padding:10px 12px; margin-top:10px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span style="color:#065f46; font-size:0.75rem; font-weight:800; text-transform:uppercase;">💡 Mejor Tarifa LCM</span>
+                            <span style="background:#d1fae5; color:#065f46; font-size:0.72rem; font-weight:700; padding:2px 8px; border-radius:10px;">Ahorro: ${best_calc['savings_mxn']:,.2f}</span>
+                        </div>
+                        <div style="color:#059669; font-size:1.45rem; font-weight:800; margin:2px 0;">
+                            ${best_calc['best_price']:,.2f} <small style="font-size:0.8rem; font-weight:600; color:#047857;">MXN</small>
+                        </div>
+                        <div style="color:#047857; font-size:0.8rem; margin:0; line-height:1.3;">{best_calc['explanation']}</div>
+                    </div>
+                    """
+
                 st.markdown(f"""
                 <div style="background:#f8fafc; border:2px solid #0284c7; border-radius:12px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,0.05);">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
@@ -190,15 +229,17 @@ def render_lcm_comparator_tab(chopo_prices: list):
                     <h3 style="color:#0f172a; margin:0 0 14px 0; font-size:1.15rem; line-height:1.4;">
                         {item.get('lcm_name', 'N/D')}
                     </h3>
-                    <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:12px; margin-top:10px;">
-                        <span style="color:#64748b; font-size:0.8rem; font-weight:600; text-transform:uppercase;">Precio Actual LCM (con IVA)</span>
-                        <div style="color:#0284c7; font-size:1.9rem; font-weight:800; margin-top:2px;">
+                    <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:12px; margin-top:6px;">
+                        <span style="color:#64748b; font-size:0.75rem; font-weight:600; text-transform:uppercase;">Precio de Lista Oficial (con IVA)</span>
+                        <div style="color:#0284c7; font-size:1.75rem; font-weight:800; margin-top:2px;">
                             {format_currency(item.get('lcm_price'))} <small style="font-size:0.85rem; font-weight:600; color:#64748b;">MXN</small>
                         </div>
                     </div>
+                    {extra_rates_html}
                     {mod_notice}
                 </div>
                 """, unsafe_allow_html=True)
+
 
             with col_vs:
                 st.markdown("<div style='height:70px'></div><div style='text-align:center; font-size:1.4rem; font-weight:800; color:#94a3b8;'>VS</div>", unsafe_allow_html=True)
@@ -465,12 +506,176 @@ def render_lcm_comparator_tab(chopo_prices: list):
                     st.toast("Promoción eliminada.")
                     st.rerun()
 
+        # ── Cotizador Inteligente de Check-Up + Adicionales (Mejor Tarifa) ──
+        st.markdown("---")
+        st.markdown("### 🧮 Cotizador Inteligente: Check-Up + Estudios Adicionales")
+        st.caption("Arma una cotización completa para el paciente. El sistema **aplica automáticamente la regla del mejor precio**: si una promoción activa es más barata que el precio adicional, se respeta la promoción; si el precio adicional es menor, aplica el adicional.")
+
+        base_pkg_opts = [
+            "Check Up Esencial LCM ($549.00)",
+            "Checkup Avanzado LCM ($890.00)",
+            "Checkup Integral Plus LCM ($998.00)",
+            "Check Up Inicial LCM ($470.00)",
+            "Check Up Tiroideo Esencial LCM ($1,050.00)",
+            "[Sin Check-Up Base (Cotizar solo estudios sueltos con mejor tarifa)]"
+        ]
+
+        c_quote1, c_quote2 = st.columns([1, 2])
+        with c_quote1:
+            sel_base_pkg = st.selectbox("1. Selecciona el Check-Up Base:", options=base_pkg_opts)
+            base_price = 0.0
+            has_checkup = False
+            if "549" in sel_base_pkg:
+                base_price = 549.0
+                has_checkup = True
+            elif "890" in sel_base_pkg:
+                base_price = 890.0
+                has_checkup = True
+            elif "998" in sel_base_pkg:
+                base_price = 998.0
+                has_checkup = True
+            elif "470" in sel_base_pkg:
+                base_price = 470.0
+                has_checkup = True
+            elif "1,050" in sel_base_pkg or "1050" in sel_base_pkg:
+                base_price = 1050.0
+                has_checkup = True
+
+        adic_list = load_adicionales()
+        adic_names = [a.get("name") for a in adic_list if a.get("name")]
+        all_studies_names = sorted(list({m.get("lcm_name") for m in matches if m.get("lcm_name")}))
+        combo_options = adic_names + [n for n in all_studies_names if n not in adic_names]
+
+        with c_quote2:
+            default_adics = [a for a in ["Hemoglobina glicosilada", "Vitamina D (25-OH) total"] if a in combo_options]
+            sel_adicionales = st.multiselect(
+                "2. Selecciona Estudios Adicionales para agregar al paciente:",
+                options=combo_options,
+                default=default_adics,
+                placeholder="Busca estudios (ej. Hemoglobina, Vitamina D, Rayos X, Ultrasonidos, Tiroideo...)"
+            )
+
+        if has_checkup or sel_adicionales:
+            st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+            quote_rows = []
+            total_adicionales_lcm = 0.0
+            total_chopo_adicionales_web = 0.0
+            total_chopo_adicionales_list = 0.0
+
+            match_by_name = {m.get("lcm_name"): m for m in matches if m.get("lcm_name")}
+
+            for ad_name in sel_adicionales:
+                m_info = match_by_name.get(ad_name, {})
+                s_code = m_info.get("lcm_code", "")
+                p_list = float(m_info.get("lcm_price") or 0.0)
+
+                best_calc = calculate_best_lcm_price(s_code, ad_name, p_list, with_checkup=has_checkup)
+                applied_p = best_calc["best_price"]
+                total_adicionales_lcm += applied_p
+
+                c_web = m_info.get("chopo_price_web")
+                c_list = m_info.get("chopo_price_list")
+                if c_web is not None:
+                    total_chopo_adicionales_web += c_web
+                if c_list is not None:
+                    total_chopo_adicionales_list += c_list
+
+                rule_badge = "🟢 Promo Gana" if best_calc["rule"] == "PROMOCION" else ("💡 Adicional Gana" if best_calc["rule"] == "ADICIONAL" else "📋 Precio Lista")
+
+                quote_rows.append({
+                    "Estudio": ad_name,
+                    "Precio Lista": p_list,
+                    "Tarifa en Check-Up": best_calc["price_bundle"],
+                    "Tarifa Promo Activa": best_calc["price_promo"],
+                    "Precio Aplicado": applied_p,
+                    "Regla / Beneficio": rule_badge
+                })
+
+            grand_total_lcm = base_price + total_adicionales_lcm
+
+            chopo_base_web = 0.0
+            chopo_base_list = 0.0
+            if "Esencial" in sel_base_pkg:
+                chopo_base_web = 597.35
+                chopo_base_list = 919.00
+            elif "Avanzado" in sel_base_pkg:
+                chopo_base_web = 915.86
+                chopo_base_list = 1409.01
+            elif "Integral Plus" in sel_base_pkg:
+                chopo_base_web = 1175.85
+                chopo_base_list = 1809.00
+            elif "Tiroideo" in sel_base_pkg:
+                chopo_base_web = 1069.25
+                chopo_base_list = 1645.00
+            elif "Inicial" in sel_base_pkg:
+                chopo_base_web = 549.00
+                chopo_base_list = 609.99
+
+            grand_total_chopo_web = chopo_base_web + total_chopo_adicionales_web
+            grand_total_chopo_list = chopo_base_list + total_chopo_adicionales_list
+
+            ahorro_vs_chopo_web = grand_total_chopo_web - grand_total_lcm
+            ahorro_vs_chopo_list = grand_total_chopo_list - grand_total_lcm
+
+            tot_c1, tot_c2, tot_c3 = st.columns(3)
+            with tot_c1:
+                st.markdown(f"""
+                <div style="background:#f0fdf4; border:2px solid #22c55e; border-radius:12px; padding:16px; text-align:center;">
+                    <span style="font-size:0.78rem; font-weight:700; color:#15803d; text-transform:uppercase;">TOTAL COTIZACIÓN LCM</span>
+                    <div style="font-size:2.2rem; font-weight:800; color:#16a34a; margin:4px 0;">
+                        ${grand_total_lcm:,.2f} <small style="font-size:0.85rem; color:#15803d;">MXN</small>
+                    </div>
+                    <small style="color:#15803d; font-weight:600;">Check-Up: ${base_price:,.2f} + Adicionales: ${total_adicionales_lcm:,.2f}</small>
+                </div>
+                """, unsafe_allow_html=True)
+
+            with tot_c2:
+                st.markdown(f"""
+                <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:16px; text-align:center;">
+                    <span style="font-size:0.78rem; font-weight:700; color:#475569; text-transform:uppercase;">TOTAL EN CHOPO MÉRIDA</span>
+                    <div style="font-size:1.8rem; font-weight:800; color:#334155; margin:4px 0;">
+                        ${grand_total_chopo_web:,.2f} <small style="font-size:0.8rem; color:#64748b;">(Web)</small>
+                    </div>
+                    <small style="color:#64748b; font-weight:600;">En Mostrador Chopo: ${grand_total_chopo_list:,.2f}</small>
+                </div>
+                """, unsafe_allow_html=True)
+
+            with tot_c3:
+                ahorro_label = "Ahorro Paciente" if ahorro_vs_chopo_web >= 0 else "Diferencia"
+                color_a = "#15803d" if ahorro_vs_chopo_web >= 0 else "#dc2626"
+                bg_a = "#ecfdf5" if ahorro_vs_chopo_web >= 0 else "#fef2f2"
+                border_a = "#86efac" if ahorro_vs_chopo_web >= 0 else "#fca5a5"
+                st.markdown(f"""
+                <div style="background:{bg_a}; border:2px solid {border_a}; border-radius:12px; padding:16px; text-align:center;">
+                    <span style="font-size:0.78rem; font-weight:700; color:{color_a}; text-transform:uppercase;">{ahorro_label} en LCM</span>
+                    <div style="font-size:2.2rem; font-weight:800; color:{color_a}; margin:4px 0;">
+                        ${abs(ahorro_vs_chopo_web):,.2f} <small style="font-size:0.85rem;">MXN</small>
+                    </div>
+                    <small style="color:{color_a}; font-weight:600;">Frente al mostrador de Chopo: Ahorro de ${abs(ahorro_vs_chopo_list):,.2f}</small>
+                </div>
+                """, unsafe_allow_html=True)
+
+            if quote_rows:
+                st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+                st.markdown("##### 📋 Desglose Detallado de Estudios Adicionales (Regla del Mejor Precio)")
+                df_quote = pd.DataFrame(quote_rows)
+                st.dataframe(
+                    df_quote.style.format({
+                        "Precio Lista": "${:,.2f}",
+                        "Tarifa en Check-Up": lambda x: f"${x:,.2f}" if pd.notna(x) else "N/A",
+                        "Tarifa Promo Activa": lambda x: f"${x:,.2f}" if pd.notna(x) else "N/A",
+                        "Precio Aplicado": "${:,.2f}",
+                    }),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
     # =========================================================================
     # SUBTAB 3: Matriz Completa & Excel
     # =========================================================================
     with subtab3:
         st.markdown("#### 📊 Matriz Consolidada de Estudios Homologados")
-        st.caption("Filtra, analiza y exporta los estudios homologados entre LCM y Chopo Mérida Altabrisa con precios en tiempo real.")
+        st.caption("Filtra, analiza y exporta los estudios homologados entre LCM y Chopo Mérida Altabrisa con precios en tiempo real y tarifas preferenciales.")
 
         # Controles de filtrado
         fc1, fc2, fc3 = st.columns([2, 2, 3])
@@ -481,6 +686,7 @@ def render_lcm_comparator_tab(chopo_prices: list):
                     "Todos los estudios",
                     "🟢 Solo donde LCM es más barato",
                     "🔴 Solo donde Chopo es más barato",
+                    "⭐ Estudios con Tarifa Especial Adicional",
                     "✏️ Solo estudios modificados manualmente",
                     "🔎 Sin homólogo en Chopo"
                 ]
@@ -493,11 +699,18 @@ def render_lcm_comparator_tab(chopo_prices: list):
         with fc3:
             search_query = st.text_input("Buscar estudio por nombre o clave:", placeholder="Ej. Tiroideo, Glucosa, Vitamina, 842...")
 
+        adic_lookup = get_adicionales_lookup()
+
         # Construir DataFrame
         df_rows = []
         for m in matches:
             diff_m = m.get("diff_mxn")
             is_mod = m.get("is_manually_edited", False)
+            code_k = str(m.get("lcm_code", "")).strip()
+            name_norm = str(m.get("lcm_name", "")).strip().upper()
+
+            adic_match = adic_lookup.get(code_k) or adic_lookup.get(name_norm)
+            p_bundle = adic_match.get("price_bundle") if adic_match else None
 
             # Aplicar filtro de veredicto
             if verdict_filter == "🟢 Solo donde LCM es más barato":
@@ -505,6 +718,9 @@ def render_lcm_comparator_tab(chopo_prices: list):
                     continue
             elif verdict_filter == "🔴 Solo donde Chopo es más barato":
                 if diff_m is None or diff_m <= 0:
+                    continue
+            elif verdict_filter == "⭐ Estudios con Tarifa Especial Adicional":
+                if p_bundle is None:
                     continue
             elif verdict_filter == "✏️ Solo estudios modificados manualmente":
                 if not is_mod:
@@ -546,7 +762,8 @@ def render_lcm_comparator_tab(chopo_prices: list):
             df_rows.append({
                 "Clave": m.get("lcm_code", ""),
                 "Estudio LCM": m.get("lcm_name", ""),
-                "Precio LCM": m.get("lcm_price"),
+                "Precio Lista LCM": m.get("lcm_price"),
+                "Tarifa en Check-Up": p_bundle,
                 "Estudio Chopo Mérida": m.get("chopo_name") or "N/D",
                 "Chopo Web": m.get("chopo_price_web"),
                 "Chopo Mostrador": m.get("chopo_price_list"),
@@ -578,7 +795,8 @@ def render_lcm_comparator_tab(chopo_prices: list):
         if not table_df.empty:
             st.dataframe(
                 table_df.style.format({
-                    "Precio LCM": lambda x: f"${x:,.2f}" if pd.notna(x) else "N/D",
+                    "Precio Lista LCM": lambda x: f"${x:,.2f}" if pd.notna(x) else "N/D",
+                    "Tarifa en Check-Up": lambda x: f"${x:,.2f}" if pd.notna(x) else "N/A",
                     "Chopo Web": lambda x: f"${x:,.2f}" if pd.notna(x) else "N/D",
                     "Chopo Mostrador": lambda x: f"${x:,.2f}" if pd.notna(x) else "N/D",
                     "Dif ($)": lambda x: f"${x:+,.2f}" if pd.notna(x) else "N/D",
