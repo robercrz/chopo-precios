@@ -390,7 +390,7 @@ def get_favorites(lab_key: str = None) -> list:
                 lp.price_raw    AS current_price_raw,
                 lp.scraped_at   AS last_updated,
                 lp.lab_name,
-                -- Precio anterior para calcular variacion
+                -- Precio anterior inmediato para calcular variacion
                 (
                     SELECT ph2.price
                     FROM price_history ph2
@@ -398,7 +398,28 @@ def get_favorites(lab_key: str = None) -> list:
                     WHERE s2.study_name = f.study_name
                     ORDER BY ph2.id DESC
                     LIMIT 1 OFFSET 1
-                ) AS prev_price
+                ) AS prev_price,
+                -- Precio anterior distinto para historial
+                (
+                    SELECT ph3.price
+                    FROM price_history ph3
+                    JOIN studies s3 ON ph3.study_id = s3.id
+                    WHERE s3.study_name = f.study_name
+                      AND ph3.price IS NOT NULL
+                      AND ph3.price != lp.price
+                    ORDER BY ph3.id DESC
+                    LIMIT 1
+                ) AS prev_distinct_price,
+                (
+                    SELECT ph3.scraped_at
+                    FROM price_history ph3
+                    JOIN studies s3 ON ph3.study_id = s3.id
+                    WHERE s3.study_name = f.study_name
+                      AND ph3.price IS NOT NULL
+                      AND ph3.price != lp.price
+                    ORDER BY ph3.id DESC
+                    LIMIT 1
+                ) AS prev_distinct_date
             FROM favorites f
             LEFT JOIN latest_prices lp ON lp.study_name = f.study_name
         """
@@ -411,10 +432,24 @@ def get_favorites(lab_key: str = None) -> list:
         results = []
         for r in rows:
             d = dict(r)
-            if d.get("current_price") and d.get("prev_price"):
-                diff = d["current_price"] - d["prev_price"]
-                d["price_change"] = diff
-                d["price_change_pct"] = (diff / d["prev_price"]) * 100
+            cur_p = d.get("current_price")
+            prev_p = d.get("prev_price")
+            prev_dist_p = d.get("prev_distinct_price")
+
+            if cur_p is not None and prev_p is not None:
+                diff = cur_p - prev_p
+                if abs(diff) > 0.001:
+                    d["price_change"] = round(diff, 2)
+                    d["price_change_pct"] = round((diff / prev_p) * 100, 2) if prev_p > 0 else 0.0
+                elif prev_dist_p is not None:
+                    diff_hist = cur_p - prev_dist_p
+                    d["price_change"] = 0.0
+                    d["price_change_pct"] = 0.0
+                    d["last_change_amount"] = round(diff_hist, 2)
+                    d["last_change_pct"] = round((diff_hist / prev_dist_p) * 100, 2) if prev_dist_p > 0 else 0.0
+                else:
+                    d["price_change"] = 0.0
+                    d["price_change_pct"] = 0.0
             else:
                 d["price_change"] = None
                 d["price_change_pct"] = None

@@ -1532,9 +1532,10 @@ def render_favorites_tab(prices: list, **kwargs):
             "current_price_raw": cur_p_raw,
             "price_change": db_f.get("price_change"),
             "price_change_pct": db_f.get("price_change_pct"),
+            "last_change_amount": db_f.get("last_change_amount"),
+            "last_change_pct": db_f.get("last_change_pct"),
             "created_at": db_f.get("created_at") or str(datetime.now())[:10],
             "note": db_f.get("note") or "",
-            "threshold": db_f.get("alert_threshold"),
             "has_lcm": has_lcm,
             "lcm_code": lcm_code,
             "lcm_name": lcm_name,
@@ -1574,10 +1575,15 @@ def render_favorites_tab(prices: list, **kwargs):
                     rows_export = []
                     for f in fav_items:
                         bp = f.get("best_pricing", {})
+                        chg_val = f.get("price_change") or 0.0
+                        var_status = "Subió (+)" if chg_val > 0 else ("Bajó (-)" if chg_val < 0 else "Estable")
                         rows_export.append({
                             "Estudio Monitoreado": f["study_name"],
                             "Chopo Web ($)": f.get("current_price"),
                             "Chopo Mostrador ($)": f.get("current_price_raw"),
+                            "Variación Chopo ($)": chg_val,
+                            "Variación Chopo (%)": f.get("price_change_pct") or 0.0,
+                            "Estado Variación": var_status,
                             "LCM Clave": f.get("lcm_code") or "",
                             "LCM Nombre Oficial": f.get("lcm_name") or "",
                             "LCM Lista ($)": f.get("lcm_price"),
@@ -1588,7 +1594,6 @@ def render_favorites_tab(prices: list, **kwargs):
                             "Ahorro (%)": f.get("savings_pct", 0.0),
                             "Detalle Tarifa": bp.get("explanation", ""),
                             "Nota Personal": f.get("note", ""),
-                            "Umbral Alerta ($)": f.get("threshold"),
                             "Fecha Agregado": f.get("created_at", "")[:10]
                         })
                     df_exp = pd.DataFrame(rows_export)
@@ -1655,7 +1660,9 @@ def render_favorites_tab(prices: list, **kwargs):
     chopo_cheaper = [f for f in fav_items if f["winner"] == "CHOPO"]
     promo_items = [f for f in fav_items if f["has_lcm"] and f["best_pricing"].get("has_promo_price")]
     bundle_items = [f for f in fav_items if f["has_lcm"] and f["best_pricing"].get("has_bundle_price")]
-    threshold_alerts = [f for f in fav_items if f["threshold"] and f["current_price"] and f["current_price"] > f["threshold"]]
+    price_increases = [f for f in fav_items if (f.get("price_change") or 0) > 0]
+    price_decreases = [f for f in fav_items if (f.get("price_change") or 0) < 0]
+    price_stable = [f for f in fav_items if f.get("current_price") and (f.get("price_change") is None or f.get("price_change") == 0)]
 
     comparable_basket = [f for f in fav_items if f["current_price"] and f["lcm_price"] and f["lcm_price"] > 0]
     tot_chopo_basket = sum(f["current_price"] for f in comparable_basket) if comparable_basket else 0.0
@@ -1670,6 +1677,29 @@ def render_favorites_tab(prices: list, **kwargs):
     b_bg = "#ecfdf5" if net_basket_diff > 0 else "#eff6ff"
     b_col = "#047857" if net_basket_diff > 0 else "#1d4ed8"
     b_brd = "#a7f3d0" if net_basket_diff > 0 else "#bfdbfe"
+
+    # Indicador de variaciones para la barra de resumen
+    if price_increases or price_decreases:
+        var_strip_html = f"""
+        <div style="width:1px; height:24px; background:#e2e8f0;"></div>
+        <div>
+            <span style="font-size:0.68rem; font-weight:700; color:#dc2626; text-transform:uppercase; letter-spacing:0.4px; display:block;">Subieron</span>
+            <span style="font-size:1.15rem; font-weight:800; color:#dc2626;">{len(price_increases)}</span>
+        </div>
+        <div style="width:1px; height:24px; background:#e2e8f0;"></div>
+        <div>
+            <span style="font-size:0.68rem; font-weight:700; color:#16a34a; text-transform:uppercase; letter-spacing:0.4px; display:block;">Bajaron</span>
+            <span style="font-size:1.15rem; font-weight:800; color:#16a34a;">{len(price_decreases)}</span>
+        </div>
+        """
+    else:
+        var_strip_html = f"""
+        <div style="width:1px; height:24px; background:#e2e8f0;"></div>
+        <div>
+            <span style="font-size:0.68rem; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.4px; display:block;">Variaciones</span>
+            <span style="font-size:1.15rem; font-weight:800; color:#64748b;">0 <small style="font-size:0.75rem; font-weight:600; color:#94a3b8;">(Estables)</small></span>
+        </div>
+        """
 
     # ── Barra Ejecutiva de Resumen (Apple / Google Minimal) ───────────────────
     summary_strip = f"""
@@ -1694,6 +1724,7 @@ def render_favorites_tab(prices: list, **kwargs):
                 <span style="font-size:0.68rem; font-weight:700; color:#d97706; text-transform:uppercase; letter-spacing:0.4px; display:block;">Ofertas LCM</span>
                 <span style="font-size:1.15rem; font-weight:800; color:#d97706;">{len(promo_items) + len(bundle_items)}</span>
             </div>
+            {var_strip_html}
         </div>
         <div style="background:{b_bg}; border:1px solid {b_brd}; border-radius:8px; padding:6px 14px; text-align:right;">
             <span style="font-size:0.68rem; font-weight:700; color:{b_col}; text-transform:uppercase; letter-spacing:0.3px; display:block;">Canasta Conjunta ({len(comparable_basket)} estudios)</span>
@@ -1708,7 +1739,7 @@ def render_favorites_tab(prices: list, **kwargs):
 
 
     # ── Barra de Búsqueda y Filtros Compacta ──────────────────────────────────
-    filter_col1, filter_col2 = st.columns([1.5, 2.5])
+    filter_col1, filter_col2 = st.columns([1.3, 2.7])
     with filter_col1:
         search_fav = st.text_input(
             "Buscar en favoritos:",
@@ -1723,8 +1754,12 @@ def render_favorites_tab(prices: list, **kwargs):
             f"🔴 Chopo más bajo ({len(chopo_cheaper)})",
             f"🎁 Con Oferta LCM ({len(promo_items) + len(bundle_items)})",
         ]
-        if threshold_alerts:
-            filter_options.append(f"⚠️ Alerta ({len(threshold_alerts)})")
+        if price_increases:
+            filter_options.append(f"📈 Subieron ({len(price_increases)})")
+        if price_decreases:
+            filter_options.append(f"📉 Bajaron ({len(price_decreases)})")
+        if not price_increases and not price_decreases:
+            filter_options.append(f"⚖️ Estables ({len(price_stable)})")
 
         selected_filter = st.radio(
             "Filtrar:",
@@ -1742,8 +1777,12 @@ def render_favorites_tab(prices: list, **kwargs):
         filtered_items = [f for f in filtered_items if f["winner"] == "CHOPO"]
     elif "🎁 Con Oferta LCM" in selected_filter:
         filtered_items = [f for f in filtered_items if f["has_lcm"] and (f["best_pricing"].get("has_promo_price") or f["best_pricing"].get("has_bundle_price"))]
-    elif "⚠️ Alerta" in selected_filter:
-        filtered_items = [f for f in filtered_items if f["threshold"] and f["current_price"] and f["current_price"] > f["threshold"]]
+    elif "📈 Subieron" in selected_filter:
+        filtered_items = [f for f in filtered_items if (f.get("price_change") or 0) > 0]
+    elif "📉 Bajaron" in selected_filter:
+        filtered_items = [f for f in filtered_items if (f.get("price_change") or 0) < 0]
+    elif "⚖️ Estables" in selected_filter:
+        filtered_items = [f for f in filtered_items if f.get("current_price") and (f.get("price_change") is None or f.get("price_change") == 0)]
 
     if search_fav:
         q_clean = search_fav.strip().lower()
@@ -1769,7 +1808,6 @@ def render_favorites_tab(prices: list, **kwargs):
         change = fav.get("price_change")
         change_pct = fav.get("price_change_pct")
         note = fav.get("note") or ""
-        threshold = fav.get("threshold")
         lab_key = fav["lab_key"]
         branch = fav.get("branch", "")
         has_lcm = fav["has_lcm"]
@@ -1781,6 +1819,12 @@ def render_favorites_tab(prices: list, **kwargs):
 
         # Insignias de Estado
         pills = []
+        if change is not None and change != 0:
+            if change > 0:
+                pills.append(f'<span class="fav-pill fav-pill-red">📈 Subió +&#36;{change:,.2f} (+{change_pct:.1f}%)</span>')
+            else:
+                pills.append(f'<span class="fav-pill fav-pill-green">📉 Bajó -&#36;{abs(change):,.2f} ({change_pct:.1f}%)</span>')
+
         if has_lcm:
             if winner == "LCM":
                 pills.append(f'<span class="fav-pill fav-pill-green">🟢 LCM -&#36;{fav["savings_amount"]:,.2f} (-{fav["savings_pct"]}%)</span>')
@@ -1814,17 +1858,14 @@ def render_favorites_tab(prices: list, **kwargs):
 
         note_tag = f' <span style="background:#f1f5f9; color:#475569; font-size:0.75rem; padding:2px 8px; border-radius:10px; margin-left:6px; font-weight:500;">💬 {note}</span>' if note else ""
 
-        # Columna Chopo Mérida Altabrisa
-        chopo_extra_html = ""
-        if change and change != 0:
-            delta_str = f"+&#36;{change:,.2f}" if change > 0 else f"-&#36;{abs(change):,.2f}"
-            col_chg = "#dc2626" if change > 0 else "#16a34a"
-            chopo_extra_html = f'<div style="font-size:0.73rem; color:{col_chg}; margin-top:4px; font-weight:600;">📈 Cambio reciente: {delta_str} ({change_pct:.1f}%)</div>'
-
-        thr_num = _clean_price(threshold)
-        p_num = _clean_price(price)
-        if thr_num and p_num and p_num > thr_num:
-            chopo_extra_html += f'<div style="font-size:0.73rem; color:#d97706; margin-top:2px; font-weight:600;">⚠️ Supera tu umbral (&#36;{thr_num:,.2f})</div>'
+        # Columna Chopo Mérida Altabrisa: alerta de subida, bajada o estabilidad
+        if change is not None and change != 0:
+            if change > 0:
+                chopo_extra_html = f'<div style="font-size:0.73rem; color:#dc2626; margin-top:5px; font-weight:700; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; padding:3px 8px; display:inline-block;">📈 Alerta: Subió +&#36;{change:,.2f} (+{change_pct:.1f}%) vs captura anterior</div>'
+            else:
+                chopo_extra_html = f'<div style="font-size:0.73rem; color:#15803d; margin-top:5px; font-weight:700; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:3px 8px; display:inline-block;">📉 Alerta: Bajó -&#36;{abs(change):,.2f} ({change_pct:.1f}%) vs captura anterior</div>'
+        else:
+            chopo_extra_html = '<div style="font-size:0.72rem; color:#64748b; margin-top:5px; display:flex; align-items:center; gap:4px;"><span>⚖️</span> <span>Precio estable (sin variación reciente)</span></div>'
 
         # Columna LCM Mérida
         if has_lcm:
@@ -1990,29 +2031,25 @@ def render_favorites_tab(prices: list, **kwargs):
                     pass
 
             with c_tools_cfg:
-                st.caption("📌 **Nota personalizada y Alerta de Umbral:**")
+                st.caption("📌 **Nota clínica y Monitoreo de Variaciones:**")
                 new_note = st.text_input(
-                    "Nota clínica:",
+                    "Nota / Comentario clínico:",
                     value=note,
                     key=f"note_{name}",
-                    placeholder="Ej: Monitorear mensualmente...",
+                    placeholder="Ej: Monitorear mensualmente para perfil tiroideo...",
                 )
-                new_threshold = st.number_input(
-                    "Alerta si Chopo supera ($):",
-                    value=float(threshold) if threshold else 0.0,
-                    min_value=0.0,
-                    step=10.0,
-                    key=f"thr_{name}",
+                st.info(
+                    "🔔 **Detección Automática:** Las alertas se activan automáticamente ante cualquier movimiento de precio (si sube 📈 o si baja 📉) registrado por el scraper.",
+                    icon="ℹ️"
                 )
                 c_save_n, c_del_f = st.columns([1.2, 1.2])
                 with c_save_n:
-                    if st.button("💾 Guardar Nota/Alerta", key=f"save_{name}", use_container_width=True):
+                    if st.button("💾 Guardar Nota", key=f"save_{name}", use_container_width=True):
                         update_favorite_note(
                             name, lab_key,
                             note=new_note or None,
-                            alert_threshold=new_threshold if new_threshold > 0 else None,
                         )
-                        st.success("Configuración guardada")
+                        st.success("Nota guardada exitosamente")
                         st.rerun()
                 with c_del_f:
                     def _cb_fav_remove_from_tab(s_name=name, l_key=lab_key, br=branch):
