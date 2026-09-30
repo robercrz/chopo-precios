@@ -61,6 +61,12 @@ def format_currency(val: Any, default: str = "N/D") -> str:
         return default
 
 
+def format_currency_html(val: Any, default: str = "N/D") -> str:
+    res = format_currency(val, default)
+    return res.replace("$", "&#36;")
+
+
+
 def format_pct(val: Any) -> str:
     if val is None or pd.isna(val) or str(val).strip() in ("", "None", "nan", "N/D", "N/A"):
         return "N/D"
@@ -248,7 +254,7 @@ def render_lcm_comparator_tab(chopo_prices: list):
                     orig_p = item.get("lcm_price_original", 0)
                     mod_notice = f"""
                     <div style="background:#fef3c7; border:1px solid #fde047; padding:4px 10px; border-radius:6px; font-size:0.75rem; color:#854d0e; margin-top:8px;">
-                        ✏️ <b>Precio actualizado manualmente</b> (Original de lista: ${orig_p:,.2f})
+                        ✏️ <b>Precio actualizado manualmente</b> (Original de lista: &#36;{orig_p:,.2f})
                     </div>
                     """
 
@@ -262,8 +268,9 @@ def render_lcm_comparator_tab(chopo_prices: list):
 
                 extra_rates_html = ""
                 if best_calc["has_bundle_price"] or best_calc["has_promo_price"]:
-                    p_bundle_str = f"${best_calc['price_bundle']:,.2f}" if best_calc["has_bundle_price"] else "N/A"
-                    p_promo_str = f"${best_calc['price_promo']:,.2f}" if best_calc["has_promo_price"] else "N/A"
+                    p_bundle_str = f"&#36;{best_calc['price_bundle']:,.2f}" if best_calc["has_bundle_price"] else "N/A"
+                    p_promo_str = f"&#36;{best_calc['price_promo']:,.2f}" if best_calc["has_promo_price"] else "N/A"
+                    expl_clean = str(best_calc.get("explanation", "")).replace("$", "&#36;")
                     extra_rates_html = f"""
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:8px;">
                         <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:6px 10px;">
@@ -278,12 +285,12 @@ def render_lcm_comparator_tab(chopo_prices: list):
                     <div style="background:#ecfdf5; border:1px solid #6ee7b7; border-radius:8px; padding:10px 12px; margin-top:10px;">
                         <div style="display:flex; justify-content:space-between; align-items:center;">
                             <span style="color:#065f46; font-size:0.75rem; font-weight:800; text-transform:uppercase;">💡 Mejor Tarifa LCM</span>
-                            <span style="background:#d1fae5; color:#065f46; font-size:0.72rem; font-weight:700; padding:2px 8px; border-radius:10px;">Ahorro: ${best_calc['savings_mxn']:,.2f}</span>
+                            <span style="background:#d1fae5; color:#065f46; font-size:0.72rem; font-weight:700; padding:2px 8px; border-radius:10px;">Ahorro: &#36;{best_calc['savings_mxn']:,.2f}</span>
                         </div>
                         <div style="color:#059669; font-size:1.45rem; font-weight:800; margin:2px 0;">
-                            ${best_calc['best_price']:,.2f} <small style="font-size:0.8rem; font-weight:600; color:#047857;">MXN</small>
+                            &#36;{best_calc['best_price']:,.2f} <small style="font-size:0.8rem; font-weight:600; color:#047857;">MXN</small>
                         </div>
-                        <div style="color:#047857; font-size:0.8rem; margin:0; line-height:1.3;">{best_calc['explanation']}</div>
+                        <div style="color:#047857; font-size:0.8rem; margin:0; line-height:1.3;">{expl_clean}</div>
                     </div>
                     """
 
@@ -301,7 +308,7 @@ def render_lcm_comparator_tab(chopo_prices: list):
                     <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:12px; margin-top:6px;">
                         <span style="color:#64748b; font-size:0.75rem; font-weight:600; text-transform:uppercase;">Precio de Lista Oficial (con IVA)</span>
                         <div style="color:#0284c7; font-size:1.75rem; font-weight:800; margin-top:2px;">
-                            {format_currency(item.get('lcm_price'))} <small style="font-size:0.85rem; font-weight:600; color:#64748b;">MXN</small>
+                            {format_currency_html(item.get('lcm_price'))} <small style="font-size:0.85rem; font-weight:600; color:#64748b;">MXN</small>
                         </div>
                     </div>
                     {extra_rates_html}
@@ -332,13 +339,13 @@ def render_lcm_comparator_tab(chopo_prices: list):
                             <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:12px;">
                                 <span style="color:#16a34a; font-size:0.75rem; font-weight:700; text-transform:uppercase;">Con Descuento Web</span>
                                 <div style="color:#16a34a; font-size:1.5rem; font-weight:800; margin-top:2px;">
-                                    {format_currency(c_web)}
+                                    {format_currency_html(c_web)}
                                 </div>
                             </div>
                             <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:12px;">
                                 <span style="color:#64748b; font-size:0.75rem; font-weight:700; text-transform:uppercase;">Precio Mostrador</span>
                                 <div style="color:#475569; font-size:1.5rem; font-weight:800; margin-top:2px;">
-                                    {format_currency(c_list)}
+                                    {format_currency_html(c_list)}
                                 </div>
                             </div>
                         </div>
@@ -359,19 +366,27 @@ def render_lcm_comparator_tab(chopo_prices: list):
             if item.get("match_type") != "NO_MATCH" and item.get("diff_mxn") is not None:
                 diff_val = item["diff_mxn"]
                 diff_pct = item.get("diff_pct", 0)
-                st.markdown("<div style='height:15px'></div>", unsafe_allow_html=True)
+                st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
                 if diff_val < 0:
-                    st.success(f"""
-                    🎉 **Veredicto Comercial: LCM es más económico**  
-                    El paciente ahorra **${abs(diff_val):,.2f} MXN ({abs(diff_pct)}%)** realizándose el estudio en **LCM** en comparación con el precio de descuento web de Chopo Mérida.
-                    """)
+                    st.markdown(f"""
+                    <div style="background:#f0fdf4; border:1px solid #86efac; border-radius:10px; padding:12px 16px; color:#166534; font-size:0.88rem;">
+                        <span style="font-weight:800; font-size:0.95rem;">🎉 Veredicto Comercial: LCM es más económico</span><br/>
+                        El paciente ahorra <b>&#36;{abs(diff_val):,.2f} MXN ({abs(diff_pct)}%)</b> realizándose el estudio en <b>LCM</b> en comparación con el precio de descuento web de Chopo Mérida.
+                    </div>
+                    """, unsafe_allow_html=True)
                 elif diff_val > 0:
-                    st.warning(f"""
-                    ⚠️ **Veredicto Comercial: Chopo ofrece menor precio en canal web**  
-                    Chopo está posicionado **${diff_val:,.2f} MXN ({diff_pct}%)** por debajo de LCM en este estudio en su portal web.
-                    """)
+                    st.markdown(f"""
+                    <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:10px; padding:12px 16px; color:#991b1b; font-size:0.88rem;">
+                        <span style="font-weight:800; font-size:0.95rem;">⚠️ Veredicto Comercial: Chopo ofrece menor precio en canal web</span><br/>
+                        Chopo está posicionado <b>&#36;{diff_val:,.2f} MXN ({diff_pct}%)</b> por debajo de LCM en este estudio en su portal web.
+                    </div>
+                    """, unsafe_allow_html=True)
                 else:
-                    st.info("🤝 **Veredicto Comercial: Mismo precio exacto** en ambos laboratorios.")
+                    st.markdown("""
+                    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px 16px; color:#334155; font-size:0.88rem;">
+                        <span style="font-weight:800; font-size:0.95rem;">🤝 Veredicto Comercial: Mismo precio exacto</span> en ambos laboratorios.
+                    </div>
+                    """, unsafe_allow_html=True)
 
             # ── Panel de Modificación Manual de Precio ────────────────────────
             with st.expander("✏️ ¿El precio de LCM cambió o está desfasado? Modifícalo aquí", expanded=False):
