@@ -437,9 +437,31 @@ def render_catalog_tab(prices: list, filters: dict):
 
     fav_names = get_favorite_names()
 
-    # ── Inicializar estados de búsqueda y estudio activo ───────────────────────
-    if "cat_search_kw" not in st.session_state:
-        st.session_state["cat_search_kw"] = ""
+    # ── Callbacks para evitar st.rerun() y mantener la pestaña activa ──────────
+    def _cb_clear_search():
+        st.session_state["cat_search_input_field"] = ""
+        st.session_state["catalog_active_study"] = None
+
+    def _cb_set_pill(tag_kw):
+        st.session_state["cat_search_input_field"] = tag_kw
+        st.session_state["catalog_active_study"] = None
+
+    def _cb_on_picker_change():
+        val = st.session_state.get("cat_study_picker_dropdown")
+        if val and not val.startswith("--"):
+            st.session_state["catalog_active_study"] = val
+
+    def _cb_isolate_study(name):
+        st.session_state["cat_search_input_field"] = name
+
+    def _cb_add_fav(name, lkey, br):
+        add_favorite(name, lkey, br)
+        st.toast(f"⭐ '{name}' agregado a favoritos!")
+
+    def _cb_remove_fav(name, lkey, br):
+        remove_favorite(name, lkey, br)
+        st.toast(f"'{name}' removido de favoritos")
+
     if "catalog_active_study" not in st.session_state:
         st.session_state["catalog_active_study"] = None
 
@@ -450,26 +472,23 @@ def render_catalog_tab(prices: list, filters: dict):
     c_search_box, c_btn_clear, c_filt_fav = st.columns([5, 1.2, 2.2])
 
     with c_search_box:
-        # Campo de texto estándar: permite seleccionar todo con Ctrl+A, borrar o escribir cualquier término
+        # Campo de texto estándar: NO usamos st.rerun() para que Streamlit mantenga la pestaña activa
         kw_input = st.text_input(
             "🔍 Buscar estudios en el catálogo:",
-            value=st.session_state.get("cat_search_kw", ""),
             placeholder="Escribe aquí (ej. vitamina, glucosa, perfil, tiroides, biometría)...",
             key="cat_search_input_field",
             help="Escribe cualquier palabra o término. La tabla se filtrará automáticamente mostrando todos los estudios que coincidan."
         )
-        if kw_input != st.session_state.get("cat_search_kw", ""):
-            st.session_state["cat_search_kw"] = kw_input
-            st.rerun()
 
     with c_btn_clear:
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-        if st.button("🧹 Limpiar", key="btn_clear_cat_search", use_container_width=True, help="Borrar búsqueda y mostrar todos los estudios"):
-            st.session_state["cat_search_kw"] = ""
-            st.session_state["catalog_active_study"] = None
-            if "cat_search_input_field" in st.session_state:
-                st.session_state["cat_search_input_field"] = ""
-            st.rerun()
+        st.button(
+            "🧹 Limpiar",
+            key="btn_clear_cat_search",
+            on_click=_cb_clear_search,
+            use_container_width=True,
+            help="Borrar búsqueda y mostrar todos los estudios"
+        )
 
     with c_filt_fav:
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
@@ -485,15 +504,20 @@ def render_catalog_tab(prices: list, filters: dict):
         ("❤️ Cardíaco & Lipídico", "colesterol"),
         ("🦠 Cultivo / Orina", "cultivo"),
     ]
+    cur_kw = (st.session_state.get("cat_search_input_field") or "").strip().lower()
     pill_cols = st.columns(len(quick_tags))
     for col, (label, tag_kw) in zip(pill_cols, quick_tags):
         with col:
-            is_active_pill = (st.session_state.get("cat_search_kw", "").strip().lower() == tag_kw.lower())
+            is_active_pill = (cur_kw == tag_kw.lower())
             btn_type = "primary" if is_active_pill else "secondary"
-            if st.button(label, key=f"quick_pill_{tag_kw}", type=btn_type, use_container_width=True):
-                st.session_state["cat_search_kw"] = tag_kw
-                st.session_state["catalog_active_study"] = None
-                st.rerun()
+            st.button(
+                label,
+                key=f"quick_pill_{tag_kw}",
+                type=btn_type,
+                on_click=_cb_set_pill,
+                args=(tag_kw,),
+                use_container_width=True
+            )
 
     # ── Aplicar filtros al DataFrame ──────────────────────────────────────────
     if only_favs:
@@ -507,7 +531,7 @@ def render_catalog_tab(prices: list, filters: dict):
         df = df[df["category"] == filters["category"]]
 
     # Filtro de búsqueda (prioriza el buscador del catálogo, o el del sidebar)
-    active_search = (st.session_state.get("cat_search_kw") or "").strip()
+    active_search = (kw_input or "").strip()
     if not active_search and filters.get("search"):
         active_search = filters["search"].strip()
 
@@ -553,18 +577,15 @@ def render_catalog_tab(prices: list, filters: dict):
             if current_active in avail_options:
                 default_idx = avail_options.index(current_active) + 1
 
-            picked_from_dropdown = st.selectbox(
+            st.selectbox(
                 "🎯 Seleccionar un estudio específico:",
                 options=["-- Elige o escribe un estudio de la lista para ver su detalle --"] + avail_options,
                 index=default_idx if default_idx <= len(avail_options) else 0,
                 key="cat_study_picker_dropdown",
+                on_change=_cb_on_picker_change,
                 label_visibility="collapsed",
                 help="Puedes seleccionar un estudio aquí o hacer clic directamente en cualquier fila de la tabla inferior."
             )
-            if picked_from_dropdown and picked_from_dropdown != "-- Elige o escribe un estudio de la lista para ver su detalle --":
-                if picked_from_dropdown != st.session_state.get("catalog_active_study"):
-                    st.session_state["catalog_active_study"] = picked_from_dropdown
-                    st.rerun()
 
     # ── Tabla Interactiva (Clic en cualquier fila para seleccionarlo) ──────────
     display_cols = [c for c in ["study_name", "category", "price", "price_raw", "lab_name", "city", "scraped_at"]
@@ -601,10 +622,7 @@ def render_catalog_tab(prices: list, filters: dict):
     if selected_rows and selected_rows.rows:
         sel_idx = selected_rows.rows[0]
         if sel_idx < len(df):
-            clicked_name = df.iloc[sel_idx]["study_name"]
-            if clicked_name != st.session_state.get("catalog_active_study"):
-                st.session_state["catalog_active_study"] = clicked_name
-                st.rerun()
+            st.session_state["catalog_active_study"] = df.iloc[sel_idx]["study_name"]
 
     # ── Panel de Detalle y Gestión de Favorito ──────────────────────────────────
     active_study = st.session_state.get("catalog_active_study")
@@ -631,21 +649,33 @@ def render_catalog_tab(prices: list, filters: dict):
 
             with c_ban_isolate:
                 if active_search.lower() != st_name.lower():
-                    if st.button("🎯 Aislar en la tabla", key=f"btn_isolate_{st_name}", use_container_width=True, help="Filtrar la tabla para mostrar únicamente este estudio"):
-                        st.session_state["cat_search_kw"] = st_name
-                        st.rerun()
+                    st.button(
+                        "🎯 Aislar en la tabla",
+                        key=f"btn_isolate_{st_name}",
+                        on_click=_cb_isolate_study,
+                        args=(st_name,),
+                        use_container_width=True,
+                        help="Filtrar la tabla para mostrar únicamente este estudio"
+                    )
 
             with c_ban_btn:
                 if is_f:
-                    if st.button("💛 Quitar de Favoritos", key=f"quick_del_{st_name}", use_container_width=True):
-                        remove_favorite(st_name, row.get("lab_key", "chopo_yucatan"), row.get("branch"))
-                        st.toast(f"'{st_name}' removido de favoritos")
-                        st.rerun()
+                    st.button(
+                        "💛 Quitar de Favoritos",
+                        key=f"quick_del_{st_name}",
+                        on_click=_cb_remove_fav,
+                        args=(st_name, row.get("lab_key", "chopo_yucatan"), row.get("branch")),
+                        use_container_width=True
+                    )
                 else:
-                    if st.button("⭐ MARCAR COMO FAVORITO", type="primary", key=f"quick_add_{st_name}", use_container_width=True):
-                        add_favorite(st_name, row.get("lab_key", "chopo_yucatan"), row.get("branch"))
-                        st.toast(f"⭐ '{st_name}' agregado a favoritos!")
-                        st.rerun()
+                    st.button(
+                        "⭐ MARCAR COMO FAVORITO",
+                        type="primary",
+                        key=f"quick_add_{st_name}",
+                        on_click=_cb_add_fav,
+                        args=(st_name, row.get("lab_key", "chopo_yucatan"), row.get("branch")),
+                        use_container_width=True
+                    )
 
             _render_study_detail(row, df_all_catalog, fav_names)
     else:
@@ -743,16 +773,29 @@ def _render_study_detail(row: "pd.Series", df: "pd.DataFrame", fav_names: set):
         st.markdown("**Acciones**")
         is_fav = study_name in fav_names
 
+        def _cb_sub_add_fav():
+            add_favorite(study_name, lab_key, branch or None)
+            st.toast(f"⭐ '{study_name}' agregado a favoritos!")
+
+        def _cb_sub_remove_fav():
+            remove_favorite(study_name, lab_key, branch or None)
+            st.toast(f"'{study_name}' removido de favoritos")
+
         if is_fav:
-            if st.button("💛 Quitar de Favoritos", key=f"detail_remove_{study_name}", use_container_width=True):
-                remove_favorite(study_name, lab_key, branch or None)
-                st.success("Eliminado de favoritos")
-                st.rerun()
+            st.button(
+                "💛 Quitar de Favoritos",
+                key=f"detail_remove_{study_name}",
+                on_click=_cb_sub_remove_fav,
+                use_container_width=True
+            )
         else:
-            if st.button("⭐ Agregar a Favoritos", key=f"detail_add_{study_name}", type="primary", use_container_width=True):
-                add_favorite(study_name, lab_key, branch or None)
-                st.success("¡Agregado a favoritos!")
-                st.rerun()
+            st.button(
+                "⭐ Agregar a Favoritos",
+                key=f"detail_add_{study_name}",
+                type="primary",
+                on_click=_cb_sub_add_fav,
+                use_container_width=True
+            )
 
         st.markdown("---")
         # Estudios similares en la misma categoría
